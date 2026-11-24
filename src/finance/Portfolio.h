@@ -1,5 +1,7 @@
 // Portfolio.h - position list operations, symbol rules and (de)serialisation.
-// File format is the original sketch's /portfolio.json: {"positions":[{"symbol","qty","buy","date"}]}.
+// File format is v2 of /portfolio.json: {"version":2,"ver","appliedSeq","nextLotId","nextTxn",
+// "positions":[{"id","symbol","qty","oqty","buy","date"}]}. v1.0 files load unchanged (missing
+// ids are assigned 1..n in load order, oqty defaults to qty).
 #pragma once
 #include "../core/AppTypes.h"
 #include "../core/JsonWriter.h"
@@ -13,8 +15,9 @@ enum AddResult : uint8_t { ADD_OK = 0, ADD_UPDATED, ADD_FULL, ADD_TOO_MANY_SYMBO
 const char *addResultText(AddResult r);
 
 // Same symbol + date replaces the existing row (original behaviour). `todayUtc` = 0 skips the future-date check.
-AddResult portfolioAdd(Position *pos, uint8_t &n, const char *symbol, const char *date, double qty, double buy, uint32_t todayUtc);
-bool portfolioDelete(Position *pos, uint8_t &n, uint8_t index);
+// `m.nextLotId` is consumed for new lots and bumped on `m.ver` for any mutation (confirm tokens).
+AddResult portfolioAdd(Position *pos, uint8_t &n, PortfolioMeta &m, const char *symbol, const char *date, double qty, double buy, uint32_t todayUtc);
+bool portfolioDelete(Position *pos, uint8_t &n, PortfolioMeta &m, uint8_t index);
 // qty = thb / buy, rejecting non-positive / non-finite inputs.
 bool qtyFromThb(double thb, double buyPrice, double &qty);
 
@@ -25,6 +28,7 @@ uint8_t distinctSymbols(const Position *pos, uint8_t n, char out[][SYMBOL_LEN], 
 void bookSync(QuoteBook &b, const Position *pos, uint8_t n);
 SymQuote *bookFind(QuoteBook &b, const char *symbol);
 
-void portfolioWrite(JsonWriter &w, const Position *pos, uint8_t n);
+void portfolioWrite(JsonWriter &w, const Position *pos, uint8_t n, const PortfolioMeta &m);
 // Lenient load (skips bad rows, keeps the rest). Returns number of rows loaded.
-uint8_t portfolioLoad(Position *pos, const char *json, size_t len);
+// Also fills `m` (missing fields keep their defaults); 0 is returned on a syntax error.
+uint8_t portfolioLoad(Position *pos, const char *json, size_t len, PortfolioMeta &m);

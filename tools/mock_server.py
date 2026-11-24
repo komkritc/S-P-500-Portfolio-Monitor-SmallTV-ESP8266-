@@ -122,7 +122,8 @@ def pos_view():
             quote, price = "missing", None
         if p["qty"] <= 0 or p["buy"] <= 0:
             quote, price = "invalid", None
-        r = {"i": i, "symbol": p["symbol"], "date": p["date"], "qty": p["qty"], "buy": p["buy"], "price": price,
+        r = {"i": i, "id": p.get("id", i + 1), "symbol": p["symbol"], "date": p["date"], "qty": p["qty"],
+             "oqty": p.get("oqty", p["qty"]), "buy": p["buy"], "price": price,
              "cost": cost, "nav": None, "pl": None, "returnPct": None, "quote": quote,
              "quoteEpoch": QTIME if price is not None else 0}
         if quote == "invalid":
@@ -146,6 +147,8 @@ def pos_view():
     if s["nav"] is not None:
         s["pl"] = round(nav - inv, 2)
         s["returnPct"] = round(s["pl"] / inv * 100, 2) if inv else None
+    s["realisedPl"] = realised_view()["pl"]
+    s["lifetimePl"] = round(s["pl"] + s["realisedPl"], 6) if s["pl"] is not None else None
     return rows, s
 
 
@@ -250,8 +253,10 @@ def job_view():
 def upsert(p):
     for e in POSITIONS:
         if e["symbol"] == p["symbol"] and e["date"] == p["date"]:
-            e.update(qty=p["qty"], buy=p["buy"])
+            e.update(qty=p["qty"], buy=p["buy"], oqty=p["qty"])
             return
+    p.setdefault("id", max([x.get("id", 0) for x in POSITIONS] + [0]) + 1)
+    p.setdefault("oqty", p["qty"])
     POSITIONS.append(p)
 
 
@@ -263,13 +268,228 @@ def close_on(date):
     return best or P1M[0][1]
 
 
+# ---- sales (mirrors the device's /sells.jsonl behaviour) ----
+import zlib
+
+LEDGER = []                       # append-only records, oldest first
+META = {"ver": 1, "appliedSeq": 0, "nextLot": 1, "nextTxn": 1}
+SALEJOB = {"state": "idle", "error": "", "symbol": "", "date": "", "price": None, "end": 0}
+for _i, _p in enumerate(POSITIONS, 1):
+    _p["id"] = _i
+    _p.setdefault("oqty", _p["qty"])
+
+
+def token():
+    lots = "|".join("%s,%s,%s,%s" % (p.get("id"), p["qty"], p["buy"], p["date"])
+                    for p in sorted(POSITIONS, key=lambda x: x.get("id", 0)))
+    return zlib.crc32(("%d,%d,%s" % (META["ver"], META["appliedSeq"], lots)).encode()) or 1
+
+
+def reversed_seqs():
+    return {r["refSeq"] for r in LEDGER if r["type"] == 1}
+
+
+def realised_view():
+    ids = reversed_seqs()
+    sales = [r for r in LEDGER if r["type"] == 0]
+    live = [r for r in sales if r["seq"] not in ids]
+    years = {}
+    for r in LEDGER:
+        years[r["date"][:4]] = round(years.get(r["date"][:4], 0) + r["realised"], 6)
+    last = live[-1] if live else None
+    return {"valid": True, "pl": round(sum(r["realised"] for r in LEDGER), 6),
+            "count": len(live), "reversed": len([r for r in LEDGER if r["type"] == 1]),
+            "records": len(LEDGER), "limit": 2000, "warn": len(LEDGER) >= 1800, "full": len(LEDGER) >= 2000,
+            "recovery": False, "badLine": False,
+            "hasLast": last is not None, "lastId": last["id"] if last else "",
+            "lastSymbol": last["symbol"] if last else "", "lastDate": last["date"] if last else "",
+            "lastRealised": last["realised"] if last else None, "lastTs": last["ts"] if last else 0,
+            "years": [{"year": int(y), "pl": p} for y, p in sorted(years.items(), reverse=True)]}
+
+
+def sale_preview(b):
+    sym = str(b.get("symbol", "")).upper()
+    date = str(b.get("date", ""))
+    if not re.fullmatch(r"[A-Z0-9^.=-]{1,15}", sym):
+        raise ValueError("invalid symbol")
+    if not re.fullmatch(r"\d{4}-\d\d-\d\d", date):
+        raise ValueError("invalid date (YYYY-MM-DD)")
+    if date > time.strftime("%Y-%m-%d"):
+        raise ValueError("sale date is in the future")
+    method, mode = b.get("method", "fifo"), b.get("mode", "qty")
+    if method not in ("fifo", "specific"):
+        raise ValueError("method must be fifo or specific")
+    if mode not in ("qty", "thb", "all"):
+        raise ValueError("mode must be thb, qty or all")
+    lots = [p for p in POSITIONS if p["symbol"] == sym and p["qty"] > 0]
+    if not lots:
+        raise ValueError("no open position for that symbol")
+    avail = sum(p["qty"] for p in lots)
+    price = b.get("price")
+    src = "manual"
+    if price is None:
+        if SALEJOB["state"] == "ok" and SALEJOB["symbol"] == sym and SALEJOB["date"] == date:
+            price, src = SALEJOB["price"], "yahoo"
+        else:
+            return "pending"
+    if not isinstance(price, (int, float)) or price <= 0:
+        raise ValueError("execution price must be > 0")
+    fee = b.get("fee", 0) or 0
+    if not isinstance(fee, (int, float)) or fee < 0:
+        raise ValueError("fee must be >= 0")
+    if mode == "all":
+        qty = avail
+    elif mode == "thb":
+        if not isinstance(b.get("amount"), (int, float)) or b["amount"] <= 0:
+            raise ValueError("amount must be > 0")
+        qty = b["amount"] / price
+    else:
+        if not isinstance(b.get("qty"), (int, float)) or b["qty"] <= 0:
+            raise ValueError("quantity must be > 0")
+        qty = b["qty"]
+    if qty > avail + 1e-7:
+        raise ValueError("only %.8g available" % avail)
+    qty = min(qty, avail)
+    if method == "specific":
+        lot = next((p for p in lots if p.get("id") == b.get("lotId")), None)
+        if lot is None:
+            raise ValueError("lot not found for that symbol")
+        if lot["qty"] < qty - 1e-7:
+            raise ValueError("lot has only %.8g" % lot["qty"])
+        picks = [(lot, qty)]
+    else:
+        need, picks = qty, []
+        for p in lots:
+            take = min(p["qty"], need)
+            if take > 0:
+                picks.append((p, take))
+                need -= take
+            if need <= 1e-9:
+                break
+        if need > 1e-7:
+            raise ValueError("not enough quantity in the open lots")
+    cost = sum(t * p["buy"] for p, t in picks)
+    gross, net = qty * price, qty * price - fee
+    return {"ok": True, "state": "ready",
+            "preview": {"symbol": sym, "date": date, "price": price,
+                        "refPrice": SALEJOB["price"] if src == "yahoo" else None, "priceSource": src,
+                        "qty": qty, "available": avail, "fee": fee,
+                        "gross": round(gross, 6), "net": round(net, 6), "cost": round(cost, 6),
+                        "realised": round(net - cost, 6), "token": token(),
+                        "alloc": [{"lot": p["id"], "date": p["date"], "buy": p["buy"], "oqty": p.get("oqty", p["qty"]),
+                                   "before": p["qty"], "after": round(p["qty"] - t, 8)} for p, t in picks]}}
+
+
+def sale_commit(b):
+    if b.get("token") != token():
+        raise ValueError("preview no longer matches the portfolio - preview again")
+    pv = sale_preview(b)
+    if pv == "pending":
+        raise ValueError("execution price must be > 0")
+    rec = {"seq": len(LEDGER) + 1, "ts": now(), "id": "TX-%06d" % META["nextTxn"], "type": 0,
+           "symbol": pv["preview"]["symbol"], "date": pv["preview"]["date"], "qty": pv["preview"]["qty"],
+           "price": pv["preview"]["price"], "refPrice": pv["preview"]["refPrice"],
+           "priceSource": pv["preview"]["priceSource"], "fee": pv["preview"]["fee"],
+           "gross": pv["preview"]["gross"], "net": pv["preview"]["net"], "cost": pv["preview"]["cost"],
+           "realised": pv["preview"]["realised"], "alloc": pv["preview"]["alloc"]}
+    for a in rec["alloc"]:
+        lot = next((p for p in POSITIONS if p.get("id") == a["lot"]), None)
+        if lot is not None:
+            lot["qty"] = a["after"]
+    POSITIONS[:] = [p for p in POSITIONS if p["qty"] > 1e-9]
+    LEDGER.append(rec)
+    META["ver"] += 1
+    META["appliedSeq"] = rec["seq"]
+    META["nextTxn"] += 1
+    return {"ok": True, "state": "committed", "id": rec["id"], "seq": rec["seq"], "preview": pv["preview"]}
+
+
+def sale_reverse(b):
+    seq = b.get("seq")
+    orig = next((r for r in LEDGER if r["seq"] == seq), None)
+    if orig is None:
+        raise ValueError("unknown transaction")
+    if orig["type"] == 1:
+        raise ValueError("only a sale can be reversed")
+    if seq in reversed_seqs():
+        raise ValueError("this sale is already reversed")
+    rec = {"seq": len(LEDGER) + 1, "ts": now(), "id": "TX-%06d" % META["nextTxn"], "type": 1,
+           "refSeq": orig["seq"], "refId": orig["id"], "symbol": orig["symbol"], "date": orig["date"],
+           "qty": orig["qty"], "price": orig["price"], "refPrice": orig["refPrice"],
+           "priceSource": orig["priceSource"], "fee": 0, "gross": -orig["gross"], "net": -orig["net"],
+           "cost": -orig["cost"], "realised": -orig["realised"], "alloc": []}
+    for a in orig["alloc"]:
+        sold = a["before"] - a["after"]
+        lot = next((p for p in POSITIONS if p.get("id") == a["lot"]), None)
+        if lot is None:
+            lot = {"id": a["lot"], "symbol": orig["symbol"], "date": a["date"], "qty": 0.0,
+                   "oqty": a.get("oqty", a["before"]), "buy": a["buy"]}
+            POSITIONS.append(lot)
+        lot["qty"] = round(lot["qty"] + sold, 8)
+        rec["alloc"].append({"lot": a["lot"], "date": a["date"], "buy": a["buy"], "oqty": a.get("oqty", a["before"]),
+                             "before": lot["qty"] - sold, "after": lot["qty"]})
+    LEDGER.append(rec)
+    META["ver"] += 1
+    META["appliedSeq"] = rec["seq"]
+    META["nextTxn"] += 1
+    return {"ok": True}
+
+
+def sale_delete(b):
+    seq = b.get("seq")
+    rec = next((r for r in LEDGER if r["seq"] == seq), None)
+    if rec is None:
+        raise ValueError("record not found")
+    sale_seq = rec["refSeq"] if rec["type"] == 1 else rec["seq"]
+    if sale_seq not in reversed_seqs():
+        sale_reverse({"seq": sale_seq})            # restores the position first, like the device
+    rev_seq = next(r["seq"] for r in LEDGER if r["type"] == 1 and r["refSeq"] == sale_seq)
+    gone = {sale_seq, rev_seq}
+    def remap(n):
+        return n - sum(1 for g in gone if g <= n) if n else 0
+    LEDGER[:] = [r for r in LEDGER if r["seq"] not in gone]
+    for r in LEDGER:
+        r["seq"] = remap(r["seq"])
+        if r.get("refSeq"):
+            r["refSeq"] = remap(r["refSeq"])
+    META["appliedSeq"] = remap(META["appliedSeq"])
+    META["ver"] += 1
+    return {"ok": True}
+
+def sale_page(q):
+    off = int(q.get("offset", ["0"])[0] or 0)
+    lim = min(max(int(q.get("limit", ["8"])[0] or 8), 1), 8)
+    sym = q.get("symbol", [""])[0]
+    ids = reversed_seqs()
+    rows = [r for r in reversed(LEDGER) if not sym or r["symbol"] == sym]
+    page = [dict(r, status="reversal" if r["type"] == 1 else ("reversed" if r["seq"] in ids else "valid"),
+                 refId=r.get("refId", "")) for r in rows[off:off + lim]]
+    rv = realised_view()
+    return {"symbol": sym, "total": len(rows), "offset": off, "count": len(page), "limit": lim,
+            "records": rv["records"], "limitRecords": 2000, "warn": rv["warn"], "full": rv["full"],
+            "pl": rv["pl"], "sales": page}
+
+
+def sale_csv(sym):
+    ids = reversed_seqs()
+    out = ["seq,date,id,type,status,symbol,qty,price,fee,gross,net,cost,realised"]
+    for r in LEDGER:
+        if sym and r["symbol"] != sym:
+            continue
+        st = "reversal" if r["type"] == 1 else ("reversed" if r["seq"] in ids else "valid")
+        out.append(",".join(str(x) for x in (r["seq"], r["date"], r["id"], r["type"], st, r["symbol"],
+                                             r["qty"], r["price"], r["fee"], r["gross"], r["net"],
+                                             r["cost"], r["realised"])))
+    return "\r\n".join(out) + "\r\n"
+
+
 ALIASES = {"SP500": "^GSPC", "S&P500": "^GSPC", "GSPC": "^GSPC", "SPX": "^SPX", "NDX": "^NDX", "NASDAQ": "^NDX"}
 
 
 def status():
     off = SCENARIO == "offline"
     stale = SCENARIO in ("stale", "offline")
-    return {"fw": "1.0.0", "uptime": int(time.time() - BOOT), "time": {"epoch": now(), "synced": True},
+    return {"fw": "1.1.0", "uptime": int(time.time() - BOOT), "time": {"epoch": now(), "synced": True},
             "heap": {"free": 21000, "maxBlock": 17000, "frag": 12},
             "chip": {"id": "A1B2C3", "cpuMHz": 160, "flashKB": 4096, "sketchKB": 512, "freeSketchKB": 1019, "sdk": "3.1.2"},
             "fs": {"ok": True, "totalKB": 1024, "usedKB": 16 + len(POSITIONS)},
@@ -341,6 +561,26 @@ class H(BaseHTTPRequestHandler):
                 return self.send(200, settings_view())
             if p == "/api/positions/job":
                 return self.send(200, job_view())
+            if p == "/api/realised":
+                return self.send(200, realised_view())
+            if p == "/api/sales":
+                return self.send(200, sale_page(q))
+            if p == "/api/sales/export":
+                data = sale_csv(q.get("symbol", [""])[0]).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/csv; charset=utf-8")
+                self.send_header("Content-Disposition", 'attachment; filename="sells.csv"')
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                return self.wfile.write(data)
+            if p == "/api/sales/job":
+                if SALEJOB["state"] == "pending" and time.time() >= SALEJOB["end"]:
+                    if SALEJOB["symbol"] in PRICES:
+                        SALEJOB.update(state="ok", price=close_on(SALEJOB["date"]))
+                    else:
+                        SALEJOB.update(state="error", error="no price data for %s on %s" % (SALEJOB["symbol"], SALEJOB["date"]))
+                return self.send(200, {k: SALEJOB[k] for k in ("state", "error", "symbol", "date", "price")})
             if p.startswith("/api/"):
                 return self.err(404, "not found")
         self.err(404, "not found")
@@ -386,7 +626,7 @@ class H(BaseHTTPRequestHandler):
                     return self.err(409, "another lookup is pending")
                 new = not any(e["symbol"] == sym and e["date"] == b["date"] for e in POSITIONS)
                 if new and len(POSITIONS) >= 24:
-                    return self.err(400, "max 24 positions")
+                    return self.err(400, "max 12 positions")
                 if "thb" in b:
                     if not isinstance(b["thb"], (int, float)) or b["thb"] <= 0:
                         return self.err(400, "thb must be > 0")
@@ -405,6 +645,39 @@ class H(BaseHTTPRequestHandler):
                     return self.err(400, "bad index")
                 POSITIONS.pop(i)
                 return self.send(200, {"ok": True})
+            if p == "/api/sales/preview":
+                if not b.get("price") and not (SALEJOB["state"] == "ok" and SALEJOB["symbol"] == str(b.get("symbol", "")).upper()
+                                               and SALEJOB["date"] == b.get("date")):
+                    if SALEJOB["state"] == "pending" and time.time() < SALEJOB["end"]:
+                        return self.err(409, "a price lookup is already running")
+                    SALEJOB.update(state="pending", error="", symbol=str(b.get("symbol", "")).upper(),
+                                   date=str(b.get("date", "")), price=None, end=time.time() + 2.5)
+                    return self.send(202, {"ok": True, "state": "pending"})
+                try:
+                    r = sale_preview(b)
+                except ValueError as e:
+                    return self.err(400, str(e))
+                if r == "pending":
+                    return self.err(400, "execution price must be > 0")
+                return self.send(200, dict(r, ok=True))
+            if p == "/api/sales/confirm":
+                try:
+                    r = sale_commit(b)
+                except ValueError as e:
+                    return self.err(409 if "preview" in str(e) else 400, str(e))
+                return self.send(200, r)
+            if p == "/api/sales/delete":
+                try:
+                    r = sale_delete(b)
+                except ValueError as e:
+                    return self.err(404 if "not found" in str(e) else 400, str(e))
+                return self.send(200, r)
+            if p == "/api/sales/reverse":
+                try:
+                    r = sale_reverse(b)
+                except ValueError as e:
+                    return self.err(400, str(e))
+                return self.send(200, r)
             if p == "/api/wifi/connect":
                 if not b.get("ssid"):
                     return self.err(400, "ssid required")

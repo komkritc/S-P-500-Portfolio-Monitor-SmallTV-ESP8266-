@@ -35,7 +35,7 @@ void drawPortfolio(Ui &u, const AppState &a, bool full) {
     g->fillRoundRect(8, 130, 142, 40, 6, C_PANEL);
     g->fillRoundRect(156, 130, 76, 40, 6, C_PANEL);
   }
-  u.text(4, "Total P/L", 1, 16, 79, A_LEFT, C_MUTED, C_PANEL);
+  u.text(4, "Unrealised P/L", 1, 16, 79, A_LEFT, C_MUTED, C_PANEL);
   fmtPct(c, sizeof c, s.retPct);
   u.text(6, c, 2, 224, 77, A_RIGHT, signColor(s.retPct), C_PANEL);
   fmtThbSigned(b, sizeof b, s.pl);

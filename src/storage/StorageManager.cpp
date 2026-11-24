@@ -17,6 +17,8 @@ bool begin() {
 }
 bool ok() { return s_ok; }
 bool busy() { return s_busy != 0; }
+void busyBegin() { s_busy++; }
+void busyEnd() { if (s_busy) s_busy--; }
 
 void fsInfo(uint32_t &total, uint32_t &used) {
   FSInfo i;
@@ -39,7 +41,7 @@ static char *readAll(const char *path, size_t &len, size_t maxLen = 4096) {
   return buf;
 }
 
-static bool writeAtomic(const char *path, const uint8_t *data, size_t len) {
+bool writeAtomic(const char *path, const uint8_t *data, size_t len) {
   if (!s_ok) return false;
   BusyGuard g;
   String tmp = String(path) + ".tmp";
@@ -69,17 +71,17 @@ bool saveSettings(const Settings &s) {
   return writeAtomic("/settings.json", (const uint8_t *)out.c_str(), out.length());
 }
 
-uint8_t loadPortfolio(Position *pos) {
+uint8_t loadPortfolio(AppState &a) {
   size_t n; char *b = readAll("/portfolio.json", n, 6144);
   if (!b) return 0;
-  uint8_t c = portfolioLoad(pos, b, n);
+  uint8_t c = portfolioLoad(a.positions, b, n, a.pmeta);
   free(b);
   return c;
 }
 
-bool savePortfolio(const Position *pos, uint8_t n) {
-  String out; out.reserve(64 + (size_t)n * 100);
-  { JsonWriter w(sinkToString, &out); portfolioWrite(w, pos, n); }
+bool savePortfolio(const AppState &a) {
+  String out; out.reserve(80 + (size_t)a.posCount * 110);
+  { JsonWriter w(sinkToString, &out); portfolioWrite(w, a.positions, a.posCount, a.pmeta); }
   return writeAtomic("/portfolio.json", (const uint8_t *)out.c_str(), out.length());
 }
 
@@ -120,7 +122,7 @@ bool saveCache(const AppState &a) {
   uint8_t *buf = (uint8_t *)malloc(cap);
   if (!buf) return false;
   BufW w{buf, 0, cap, false};
-  CacheHdr h{CACHE_MAGIC, 1, a.book.n, (uint16_t)sizeof(SymQuote), (uint16_t)sizeof(SP500Quote)};
+  CacheHdr h{CACHE_MAGIC, 3, a.book.n, (uint16_t)sizeof(SymQuote), (uint16_t)sizeof(SP500Quote)};
   w.put(&h, sizeof h);
   w.put(a.book.q, sizeof(SymQuote) * a.book.n);
   w.put(&a.sp, sizeof a.sp);
@@ -147,7 +149,7 @@ bool loadCache(AppState &a) {
     uint32_t crc; memcpy(&crc, p + n - 4, 4);
     if ((crc32(p, n - 4) ^ 0xFFFFFFFF) != crc) break;
     CacheHdr h; memcpy(&h, p, sizeof h);
-    if (h.magic != CACHE_MAGIC || h.version != 1 || h.sizeofQuote != sizeof(SymQuote) || h.sizeofSp != sizeof(SP500Quote) || h.nq > MAX_SYMBOLS) break;
+    if (h.magic != CACHE_MAGIC || h.version != 3 || h.sizeofQuote != sizeof(SymQuote) || h.sizeofSp != sizeof(SP500Quote) || h.nq > MAX_SYMBOLS) break;
     size_t o = sizeof h, end = n - 4;
     if (o + (size_t)h.nq * sizeof(SymQuote) + sizeof(SP500Quote) > end) break;
     SymQuote q[MAX_SYMBOLS]; memcpy(q, p + o, sizeof(SymQuote) * h.nq); o += sizeof(SymQuote) * h.nq;
@@ -193,7 +195,8 @@ void eraseAll(bool keepWifi, bool keepPortfolio) {
     String n = d.fileName();
     if (n.length() && n[0] != '/') n = "/" + n;
     if (keepWifi && n == "/wifi.json") continue;
-    if (keepPortfolio && n == "/portfolio.json") continue;
+    // the ledger and its in-flight journal describe the open positions: keep or drop them together
+    if (keepPortfolio && (n == "/portfolio.json" || n == "/sells.jsonl" || n == "/txn.pending")) continue;
     LittleFS.remove(n);
   }
 }

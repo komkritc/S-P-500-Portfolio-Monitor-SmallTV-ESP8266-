@@ -13,8 +13,10 @@
 #include "../../src/display/Widgets.h"
 #include "../../src/display/PortfolioScreen.h"
 #include "../../src/display/PositionsScreen.h"
+#include "../../src/display/RealisedScreen.h"
 #include "../../src/display/MarketScreen.h"
 #include "../../src/display/ChartRenderer.h"
+#include "../../src/finance/SaleEngine.h"
 #include <string>
 #include <vector>
 
@@ -52,13 +54,33 @@ static void loadQuote(AppState &a, uint32_t nowMs, uint32_t epoch) {
   if (b) { b->valid = true; b->price = p.price; b->marketTime = p.marketTime; b->okMs = nowMs; b->okEpoch = epoch; }
 }
 
-static void addPos(AppState &a, const char *sym, const char *date, double qty, double buy) { portfolioAdd(a.positions, a.posCount, sym, date, qty, buy, 0); }
+static void addPos(AppState &a, const char *sym, const char *date, double qty, double buy) { portfolioAdd(a.positions, a.posCount, a.pmeta, sym, date, qty, buy, 0); }
 static void setPrice(AppState &a, const char *sym, double px, uint32_t nowMs) {
   SymQuote *q = bookFind(a.book, sym); if (!q) return;
   q->valid = true; q->price = px; q->marketTime = 1795210554; q->okMs = nowMs; q->okEpoch = 1795210560; q->failed = false; q->fromCache = false;
 }
 
-enum Scn { S_NORMAL, S_LOSS, S_MANY, S_MISSING, S_STALE, S_EMPTY, S_NODATA, S_BIG };
+enum Scn { S_NORMAL, S_LOSS, S_MANY, S_MISSING, S_STALE, S_EMPTY, S_NODATA, S_BIG, S_REALISED, S_REALBIG };
+
+// A synthetic ledger line (the engine is the same one the device runs on /sells.jsonl).
+static void addSale(AppState &a, const char *id, const char *date, double realised) {
+  SaleRecord r; memset(&r, 0, sizeof r);
+  r.seq = a.realised.records + 1; r.ts = NOW_CLOSED; r.type = REC_SALE;
+  strncpy(r.id, id, sizeof r.id - 1); strncpy(r.symbol, "^GSPC", sizeof r.symbol - 1);
+  strncpy(r.date, date, sizeof r.date - 1);
+  r.realised = realised; r.nAlloc = 1; r.alloc[0].lot = 1;
+  sale::summaryAdd(a.realised, r);
+}
+
+// Undo = an appended reversal record (never an edit); the summary must net back out.
+static void addReverse(AppState &a, const char *id, const char *refId, const char *date, double realised) {
+  SaleRecord r; memset(&r, 0, sizeof r);
+  r.seq = a.realised.records + 1; r.ts = NOW_CLOSED; r.type = REC_REVERSAL;
+  strncpy(r.id, id, sizeof r.id - 1); strncpy(r.refId, refId, sizeof r.refId - 1);
+  strncpy(r.symbol, "^GSPC", sizeof r.symbol - 1); strncpy(r.date, date, sizeof r.date - 1);
+  r.realised = -realised; r.nAlloc = 1; r.alloc[0].lot = 1;
+  sale::summaryAdd(a.realised, r);
+}
 
 static void build(AppState &a, Scn s, uint32_t epoch) {
   appInit(a);
@@ -68,6 +90,20 @@ static void build(AppState &a, Scn s, uint32_t epoch) {
   else if (s == S_MANY) {
     addPos(a, "^GSPC", "2025-11-20", 39.17, 6382.10); addPos(a, "^GSPC", "2026-01-05", 12.5, 7010.5); addPos(a, "^GSPC", "2026-02-02", 3.25, 7300);
     addPos(a, "^GSPC", "2026-03-02", 1.1, 6100); addPos(a, "^GSPC", "2026-04-01", 100.123456, 6900); addPos(a, "^GSPC", "2026-05-01", 0.5, 7800); addPos(a, "^GSPC", "2026-06-01", 2, 6500);
+  } else if (s == S_REALISED) {
+    addPos(a, "^GSPC", "2025-11-20", 39.17, 6382.10); addPos(a, "^GSPC", "2026-01-05", 12.5, 7010.5); addPos(a, "^GSPC", "2026-02-02", 3.25, 6200);
+    sale::summaryReset(a.realised);
+    addSale(a, "TX-000001", "2026-10-15", 2450.75);
+    addSale(a, "TX-000002", "2025-06-01", -800.25);
+    addReverse(a, "TX-000003", "TX-000002", "2025-06-01", -800.25);
+    a.realised.hasLast = true; strcpy(a.realised.lastId, "TX-000001"); strcpy(a.realised.lastSymbol, "^GSPC");
+    strcpy(a.realised.lastDate, "2026-10-15"); a.realised.lastRealised = 2450.75; a.realised.lastTs = NOW_CLOSED;
+  } else if (s == S_REALBIG) {
+    addPos(a, "^GSPC", "2025-11-20", 39.17, 6382.10);
+    sale::summaryReset(a.realised);
+    addSale(a, "TX-000001", "2026-11-19", -1234567.89);
+    a.realised.hasLast = true; strcpy(a.realised.lastId, "TX-000001"); strcpy(a.realised.lastSymbol, "^GSPC");
+    strcpy(a.realised.lastDate, "2026-11-19"); a.realised.lastRealised = -1234567.89; a.realised.lastTs = NOW_CLOSED;
   } else if (s == S_BIG) { addPos(a, "^GSPC", "2025-11-20", 1234567.891, 6382.10); }
   else if (s == S_LOSS) { addPos(a, "^GSPC", "2026-02-02", 20, 7300); addPos(a, "^GSPC", "2026-03-03", 5, 7500); }
   else { addPos(a, "^GSPC", "2025-11-20", 39.17, 6382.10); addPos(a, "^GSPC", "2026-01-05", 12.5, 7010.5); addPos(a, "^GSPC", "2026-02-02", 3.25, 6200); }
@@ -114,12 +150,13 @@ int main(int argc, char **argv) {
   g_dir = argc > 1 ? argv[1] : ".";
   U.begin(&G);
   static AppState a;
-  struct { Scn s; const char *n; } scn[] = {{S_NORMAL, "normal"}, {S_LOSS, "loss"}, {S_MANY, "many"}, {S_MISSING, "missing"}, {S_STALE, "stale"}, {S_EMPTY, "empty"}, {S_NODATA, "nodata"}, {S_BIG, "bignum"}};
+  struct { Scn s; const char *n; } scn[] = {{S_NORMAL, "normal"}, {S_LOSS, "loss"}, {S_MANY, "many"}, {S_MISSING, "missing"}, {S_STALE, "stale"}, {S_EMPTY, "empty"}, {S_NODATA, "nodata"}, {S_BIG, "bignum"}, {S_REALISED, "realised"}, {S_REALBIG, "realbig"}};
   for (auto &sc : scn) {
     build(a, sc.s, NOW_CLOSED);
     char n[64];
     fresh(); display::drawPortfolio(U, a, true); snprintf(n, sizeof n, "%s_p1_portfolio", sc.n); dump(n);
     for (uint8_t w = 0; w < display::windowCount(a.posCount); w++) { fresh(); display::drawPositions(U, a, w, true); snprintf(n, sizeof n, "%s_p2_positions_w%u", sc.n, w); dump(n); }
+    fresh(); display::drawRealised(U, a, true); snprintf(n, sizeof n, "%s_p4_realised", sc.n); dump(n);      // page 4 (also the "no sales yet" branch)
     for (uint8_t r = 0; r < 3; r++) {
       fresh(); display::ChartParams cp = {r, 0, 0, a.chartStale[r]}; (void)cp;
       display::drawMarket(U, a, r, true, true); snprintf(n, sizeof n, "%s_p3_market_%s", sc.n, rangeLabel(r)); dump(n);

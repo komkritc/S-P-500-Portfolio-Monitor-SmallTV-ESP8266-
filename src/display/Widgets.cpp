@@ -36,7 +36,7 @@ void drawHeader(Ui &u, const AppState &a, const char *title, uint8_t page, bool 
     else { u.eraseSlot(SLOT_AP); wifiIcon(g, 216, 5, bars < 0 ? 0 : bars, bars >= 3 ? C_POS : C_WARN, C_LINE, bars < 0); }
     s_lastBars = bars; s_lastAp = ap;
   }
-  if (full || page != s_lastDots) { g->fillRect(158, 6, 44, 12, C_BG); pageDots(g, 180, 12, 3, page); s_lastDots = page; }
+  if (full || page != s_lastDots) { g->fillRect(150, 6, 60, 12, C_BG); pageDots(g, 180, 12, page == 3 ? 4 : 3, page); s_lastDots = page; }
 }
 
 void drawTicker(Ui &u, const AppState &a, int y0, bool full) {

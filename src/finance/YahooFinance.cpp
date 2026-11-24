@@ -6,8 +6,8 @@
 namespace yahoo {
 
 static const char HOST[] = "query1.finance.yahoo.com";
-static const uint32_t MIN_BLOCK = 14000;       // measured: a handshake takes ~10 KB; below this the Wi-Fi driver starves and the chip resets (Exception 29)
-static const uint32_t MIN_FREE_AFTER_TLS = 6000;
+static const uint32_t MIN_BLOCK = 9000;     // was 16000 (EXPERIMENT: the real need is one 5.6 KB TLS buffer + ~2 KB; watch /api/status reset.reason)       // measured: the client + TLS handshake needs ~10 KB and we keep 6 KB free; below this the Wi-Fi driver starves and the chip resets (Exception 29)
+static const uint32_t MIN_FREE_AFTER_TLS = 4500;   // was 6000
 static const uint32_t CONNECT_TIMEOUT_MS = 8000;
 static const uint32_t IDLE_TIMEOUT_MS = 10000;  // no byte for this long
 static const uint32_t TOTAL_TIMEOUT_MS = 25000;

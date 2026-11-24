@@ -17,6 +17,8 @@ enum Refresh : uint8_t { REF_ALL = 0, REF_QUOTE, REF_CHARTS, REF_PORTFOLIO };
 
 enum JobState : uint8_t { JOB_IDLE = 0, JOB_PENDING, JOB_OK, JOB_ERROR };
 struct AddJob { JobState state; char error[48]; char symbol[SYMBOL_LEN]; bool updated; };
+// Historical close of `date` for `symbol`, fetched when a sell is previewed without an execution price.
+struct SalePriceJob { JobState state; char error[48]; char symbol[SYMBOL_LEN]; char date[11]; double price; };
 
 void begin();
 void loop();                                   // call every loop(); never blocks beyond the TLS handshake
@@ -26,6 +28,10 @@ void setViewRange(uint8_t range);              // chart the user is looking at i
 bool requestAddByThb(const char *symbol, const char *date, double thb);   // false if a job is pending
 const AddJob &addJob();
 void consumeAddJob();                          // web UI has read the final state -> back to idle
+// Fills SalePriceJob::price with the close on `date`. False when another price job is running.
+bool requestSalePrice(const char *symbol, const char *date);
+const SalePriceJob &salePriceJob();
+void consumeSalePriceJob();
 void clearCache();                             // drop quotes/charts (RAM + flash) and refetch
 void flushCache();                             // write cache.bin now if dirty (before restart)
 bool busy();                                   // a Yahoo request is in flight (OTA must wait)

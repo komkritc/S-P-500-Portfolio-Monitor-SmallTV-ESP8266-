@@ -77,11 +77,12 @@ void drawPositions(Ui &u, const AppState &a, uint8_t window, bool full) {
   u.text(7, "Total Invested", 1, 8, 132, A_LEFT, C_MUTED);
   fmtThb(b, sizeof b, s.invested);
   u.text(8, b, 1, 232, 132, A_RIGHT, C_TEXT);
-  u.text(9, "Total P/L", 1, 8, 147, A_LEFT, C_MUTED);
+  u.text(9, "Unrealised P/L", 1, 8, 147, A_LEFT, C_MUTED);
   char amt[40]; fmtThbSigned(amt, sizeof amt, s.pl); fmtPct(c, sizeof c, s.retPct);
   snprintf(b, sizeof b, "%s (%s)", amt, c);
-  const int maxW = 224 - Ui::width("Total P/L", 1) - 6;
+  const int maxW = 224 - Ui::width("Unrealised P/L", 1) - 6;
   if (Ui::width(b, 1) > maxW) { fmtNum(amt, sizeof amt, s.pl, 2, SIGN_ALWAYS); snprintf(b, sizeof b, "%s (%s)", amt, c); }   // drop "THB" when tight
+  if (Ui::width(b, 1) > maxW) { snprintf(b, sizeof b, "%s", amt); }                                          // then the percentage
   u.text(17, b, 1, 232, 147, A_RIGHT, signColor(s.pl));
 
   drawTicker(u, a, TICKER_Y, full);

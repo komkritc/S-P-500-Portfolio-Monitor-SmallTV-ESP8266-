@@ -12,7 +12,9 @@ files = [os.path.join(here, "preview.cpp")] + [os.path.join(src, p) for p in (
     "core/MarketClock.cpp", "core/Format.cpp", "core/AppState.cpp", "finance/FinancialCalculator.cpp", "finance/Portfolio.cpp",
     "finance/JsonStream.cpp", "finance/YahooParser.cpp", "finance/ChartData.cpp", "core/JsonWriter.cpp",
     "display/UiKit.cpp", "display/Widgets.cpp", "display/PortfolioScreen.cpp", "display/PositionsScreen.cpp",
+    "display/RealisedScreen.cpp",
     "display/MarketScreen.cpp", "display/ChartRenderer.cpp", "display/ViewSchedule.cpp",
+    "finance/SaleEngine.cpp",
     "display/font/lcd_font.cpp", "display/font/lcd_fonts_data.cpp")]
 os.makedirs(os.path.join(tests, "preview", "out"), exist_ok=True)
 subprocess.check_call(cmd + ["-std=c++17", "-O1", "-g", "-w", "-I", os.path.join(here, "mock"), "-o", exe] + files)

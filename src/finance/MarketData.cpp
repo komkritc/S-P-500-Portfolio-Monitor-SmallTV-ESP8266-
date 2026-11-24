@@ -15,7 +15,7 @@ static const uint32_t CACHE_SAVE_MS = 15UL * 60 * 1000;
 static const uint16_t CLOSED_QUOTE_S = 900;
 static const uint16_t CLOSED_CHART_S = 3600;
 
-enum JobType : uint8_t { J_NONE, J_SP_QUOTE, J_SYM_QUOTE, J_CHART, J_BUY_PRICE };
+enum JobType : uint8_t { J_NONE, J_SP_QUOTE, J_SYM_QUOTE, J_CHART, J_BUY_PRICE, J_SALE_PRICE };
 
 struct Due { uint32_t at; uint8_t fails; bool force; };   // at: millis() deadline
 
@@ -33,6 +33,9 @@ static AddJob s_add = {JOB_IDLE, "", "", false};
 static bool s_addQueued = false;
 static char s_addSym[SYMBOL_LEN], s_addDate[11];
 static double s_addThb = 0;
+static SalePriceJob s_salePrice = {JOB_IDLE, "", "", "", NAN};
+static bool s_saleQueued = false;
+static char s_saleSym[SYMBOL_LEN], s_saleDate[11];
 
 static bool wifiUp() { return WiFi.status() == WL_CONNECTED; }
 static uint32_t nowEpoch() { time_t t = time(nullptr); return t > 1600000000L ? (uint32_t)t : 0; }
@@ -130,6 +133,33 @@ bool requestAddByThb(const char *symbol, const char *date, double thb) {
 const AddJob &addJob() { return s_add; }
 void consumeAddJob() { if (s_add.state == JOB_OK || s_add.state == JOB_ERROR) memset(&s_add, 0, sizeof s_add); }
 
+bool requestSalePrice(const char *symbol, const char *date) {
+  if (s_salePrice.state == JOB_PENDING) return false;
+  char sym[SYMBOL_LEN];
+  memset(&s_salePrice, 0, sizeof s_salePrice);
+  s_salePrice.price = NAN;
+  if (!normalizeSymbol(symbol, sym, sizeof sym)) { s_salePrice.state = JOB_ERROR; strlcpy(s_salePrice.error, "invalid symbol", sizeof s_salePrice.error); return true; }
+  int y, m, d;
+  if (!parseIsoDate(date, y, m, d)) { s_salePrice.state = JOB_ERROR; strlcpy(s_salePrice.error, "invalid date (YYYY-MM-DD)", sizeof s_salePrice.error); return true; }
+  uint32_t ep = nowEpoch();
+  if (ep && utcMidnight(y, m, d) > ep + 86400UL) { s_salePrice.state = JOB_ERROR; strlcpy(s_salePrice.error, "date is in the future", sizeof s_salePrice.error); return true; }
+  strcpy(s_saleSym, sym);
+  strcpy(s_saleDate, date);
+  strlcpy(s_salePrice.symbol, sym, sizeof s_salePrice.symbol);
+  strlcpy(s_salePrice.date, date, sizeof s_salePrice.date);
+  s_salePrice.state = JOB_PENDING;
+  s_saleQueued = true;
+  return true;
+}
+
+const SalePriceJob &salePriceJob() { return s_salePrice; }
+void consumeSalePriceJob() {
+  if (s_salePrice.state == JOB_OK || s_salePrice.state == JOB_ERROR) {
+    memset(&s_salePrice, 0, sizeof s_salePrice);
+    s_salePrice.price = NAN;
+  }
+}
+
 void clearCache() {
   memset(&g_app.sp, 0, sizeof g_app.sp);
   g_app.sp.last = g_app.sp.prevClose = g_app.sp.open = g_app.sp.high = g_app.sp.low = NAN;
@@ -155,7 +185,7 @@ static bool startRequest(const char *path) {
 
 static void failJob(uint32_t now, const yahoo::Result &r) {
   bool rl = r.rateLimited;
-  const char *what = s_job == J_SP_QUOTE ? "^GSPC quote" : s_job == J_SYM_QUOTE ? g_app.book.q[s_jobArg].symbol : s_job == J_CHART ? rangeLabel(s_jobArg) : "buy price";
+  const char *what = s_job == J_SP_QUOTE ? "^GSPC quote" : s_job == J_SYM_QUOTE ? g_app.book.q[s_jobArg].symbol : s_job == J_CHART ? rangeLabel(s_jobArg) : s_job == J_SALE_PRICE ? "sale price" : "buy price";
   setError(what, r.error);
   switch (s_job) {
     case J_SP_QUOTE: g_app.sp.failed = true; markAll(false); { SymQuote *q = bookFind(g_app.book, SP500_SYMBOL); if (q && q->valid) q->failed = true; } backoff(s_spQ, now, rl, g_app.settings.quoteRefreshS); break;
@@ -164,6 +194,10 @@ static void failJob(uint32_t now, const yahoo::Result &r) {
     case J_BUY_PRICE:
       s_add.state = JOB_ERROR;
       strlcpy(s_add.error, r.notFound ? "unknown symbol (Yahoo has no data)" : r.error, sizeof s_add.error);
+      break;
+    case J_SALE_PRICE:
+      s_salePrice.state = JOB_ERROR;
+      strlcpy(s_salePrice.error, r.notFound ? "unknown symbol (Yahoo has no data)" : r.error, sizeof s_salePrice.error);
       break;
     default: break;
   }
@@ -236,13 +270,29 @@ static void commitJob(uint32_t now) {
       }
       double qty;
       if (!qtyFromThb(s_addThb, buy, qty)) { s_add.state = JOB_ERROR; strlcpy(s_add.error, "invalid amount / price", sizeof s_add.error); return; }
-      AddResult r = portfolioAdd(g_app.positions, g_app.posCount, s_addSym, s_addDate, qty, buy, ep);
+      AddResult r = portfolioAdd(g_app.positions, g_app.posCount, g_app.pmeta, s_addSym, s_addDate, qty, buy, ep);
       if (r != ADD_OK && r != ADD_UPDATED) { s_add.state = JOB_ERROR; strlcpy(s_add.error, addResultText(r), sizeof s_add.error); return; }
-      bool saved = storage::savePortfolio(g_app.positions, g_app.posCount);
+      bool saved = storage::savePortfolio(g_app);
       positionsChanged();
       s_add.state = JOB_OK; s_add.updated = r == ADD_UPDATED;
       Serial.printf("[add] %s %s thb=%.2f buy=%.2f qty=%.6f exact=%d\n", s_addSym, s_addDate, s_addThb, buy, qty, (int)exact);
       if (!saved) strlcpy(s_add.error, "added, but saving to flash failed", sizeof s_add.error);
+      break;
+    }
+    case J_SALE_PRICE: {
+      int y, m, d;
+      double px = NAN;
+      bool exact = false;
+      parseIsoDate(s_saleDate, y, m, d);
+      int32_t off = (s_parser.tzName[0] && strcmp(s_parser.tzName, "America/New_York") != 0) ? s_parser.gmtOffset : EXCHANGE_NY;
+      if (!pickCloseOnDate(s_stageT, s_stageV, s_parser.count, y, m, d, px, &exact, off)) {
+        s_salePrice.state = JOB_ERROR;
+        strlcpy(s_salePrice.error, "no close price on or before that date", sizeof s_salePrice.error);
+        return;
+      }
+      s_salePrice.price = px;
+      s_salePrice.state = JOB_OK;
+      Serial.printf("[sale] %s %s close=%.6f exact=%d\n", s_saleSym, s_saleDate, px, (int)exact);
       break;
     }
     default: break;
@@ -262,6 +312,28 @@ static bool pickAndStart(uint32_t now) {
     s_parser.begin(s_stageT, s_stageV, STAGE_CAP);
     s_job = J_BUY_PRICE;
     if (!startRequest(path)) { const yahoo::Result &r = yahoo::result(); s_add.state = JOB_ERROR; strlcpy(s_add.error, r.error, sizeof s_add.error); s_job = J_NONE; return true; }
+    return true;
+  }
+  if (s_saleQueued) {
+    s_saleQueued = false;
+    int y, m, d;
+    parseIsoDate(s_saleDate, y, m, d);
+    uint32_t mid = utcMidnight(y, m, d);
+    // same window as the buy-price job: 9 days before .. 2 days after, daily bars
+    if (!yahoo::buildPeriodPath(path, sizeof path, s_saleSym, mid - 9 * 86400, mid + 2 * 86400)) {
+      s_salePrice.state = JOB_ERROR;
+      strlcpy(s_salePrice.error, "bad symbol", sizeof s_salePrice.error);
+      return false;
+    }
+    s_parser.begin(s_stageT, s_stageV, STAGE_CAP);
+    s_job = J_SALE_PRICE;
+    if (!startRequest(path)) {
+      const yahoo::Result &r = yahoo::result();
+      s_salePrice.state = JOB_ERROR;
+      strlcpy(s_salePrice.error, r.error, sizeof s_salePrice.error);
+      s_job = J_NONE;
+      return true;
+    }
     return true;
   }
   // ^GSPC quote

@@ -12,6 +12,7 @@
 
 #include "src/core/AppState.h"
 #include "src/storage/StorageManager.h"
+#include "src/storage/SaleStore.h"
 #include "src/finance/Portfolio.h"
 #include "src/finance/MarketData.h"
 #include "src/network/WiFiManager.h"
@@ -21,7 +22,7 @@
 #include "src/core/Format.h"
 #include "src/core/MarketClock.h"
 
-#define HEAP(tag) Serial.printf("[heap] %-10s free=%u block=%u\n", tag, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxFreeBlockSize())
+#define HEAP(tag) Serial.printf(S_LIT("[heap] %-10s free=%u block=%u\n"), tag, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxFreeBlockSize())
 
 static uint32_t s_lastHeapLog = 0;
 
@@ -39,7 +40,8 @@ void setup() {
   storage::begin();
   HEAP("littlefs");
   storage::loadSettings(g_app.settings);
-  g_app.posCount = storage::loadPortfolio(g_app.positions);
+  g_app.posCount = storage::loadPortfolio(g_app);
+  storage::ledgerBoot(g_app);              // replay /sells.jsonl into the positions + realised totals
   bookSync(g_app.book, g_app.positions, g_app.posCount);
   // The SP500 quote slot always exists (detailed quote + 'S&P 500' ticker), even with an empty portfolio.
   if (!bookFind(g_app.book, SP500_SYMBOL)) { SymQuote &q = g_app.book.q[g_app.book.n++]; memset(&q, 0, sizeof q); strcpy(q.symbol, SP500_SYMBOL); q.price = NAN; }
@@ -79,9 +81,9 @@ void loop() {
     lastData = now;
     char b1[32], b2[32], b3[32];
     fmtThb(b1, sizeof b1, g_app.summary.nav); fmtThbSigned(b2, sizeof b2, g_app.summary.pl); fmtPct(b3, sizeof b3, g_app.summary.retPct);
-    Serial.printf("[data] NAV %s  P/L %s (%s)  pos=%u priced=%u stale=%d | ", b1, b2, b3, g_app.posCount, g_app.summary.priced, (int)g_app.summary.stale);
+    Serial.printf(S_LIT("[data] NAV %s  P/L %s (%s)  pos=%u priced=%u stale=%d | "), b1, b2, b3, g_app.posCount, g_app.summary.priced, (int)g_app.summary.stale);
     fmtIndex(b1, sizeof b1, g_app.quote.last); fmtIndexSigned(b2, sizeof b2, g_app.quote.change); fmtPct(b3, sizeof b3, g_app.quote.changePct);
-    Serial.printf("SPX %s %s (%s) %s stale=%d | charts %u/%u/%u\n", b1, b2, b3, g_app.quote.status == MS_OPEN ? "OPEN" : g_app.quote.status == MS_PRE ? "PRE" : g_app.quote.status == MS_CLOSED ? "CLOSED" : "N/A", (int)g_app.quote.stale, g_app.charts[0].n, g_app.charts[1].n, g_app.charts[2].n);
+    Serial.printf(S_LIT("SPX %s %s (%s) %s stale=%d | charts %u/%u/%u\n"), b1, b2, b3, g_app.quote.status == MS_OPEN ? "OPEN" : g_app.quote.status == MS_PRE ? "PRE" : g_app.quote.status == MS_CLOSED ? "CLOSED" : "N/A", (int)g_app.quote.stale, g_app.charts[0].n, g_app.charts[1].n, g_app.charts[2].n);
   }
   if (now - s_lastHeapLog >= 300000UL) {
     s_lastHeapLog = now;

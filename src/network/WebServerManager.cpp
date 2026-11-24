@@ -2,6 +2,8 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266WiFi.h>
 #include <time.h>
+#include <memory>
+#include <new>
 #include "WiFiManager.h"
 #include "OTAManager.h"
 #include "../core/AppState.h"
@@ -14,6 +16,7 @@
 #include "../finance/MarketData.h"
 #include "../finance/Portfolio.h"
 #include "../storage/StorageManager.h"
+#include "../storage/SaleStore.h"
 #include "../../web/web_assets.h"
 
 namespace webserver {
@@ -66,6 +69,11 @@ static bool requireAuth() {
 }
 
 // POST body (plain). ESP8266WebServer stores a JSON body as arg("plain"); cap the size.
+// FlatJson is ~1.3 KB: on the ESP8266 request stack it leaves too little for the handler + LittleFS/JsonWriter
+// and the chip hits the watchdog. Keep it on the heap.
+#define HEAP_JSON(j, onFail) std::unique_ptr<FlatJson> j##_p(new (std::nothrow) FlatJson); \
+  if (!j##_p) { sendErr(500, "out of memory"); onFail; } FlatJson &j = *j##_p
+
 static bool body(FlatJson &j, char *err = nullptr, size_t en = 0) {
   const String &b = server.arg("plain");
   if (b.length() == 0) { return j.parse("{}", 2); }
@@ -108,6 +116,7 @@ static void handleNotFound() {
 static void writeSummary(JsonWriter &w, const PortfolioSummary &s) {
   w.key("summary").beginObj();
   w.kNum("invested", s.invested).kNum("nav", s.nav).kNum("pl", s.pl).kNum("returnPct", s.retPct)
+   .kNum("realisedPl", s.realisedPl).kNum("lifetimePl", s.lifetimePl)
    .kInt("positions", s.count).kInt("priced", s.priced).kInt("invalid", s.invalid).kBool("complete", s.complete).kBool("stale", s.stale);
   w.endObj();
 }
@@ -122,6 +131,13 @@ static void apiStatus() {
   char id[10]; snprintf(id, sizeof id, "%06X", (unsigned)ESP.getChipId());
   w.key("chip").beginObj().kStr("id", id).kInt("cpuMHz", ESP.getCpuFreqMHz()).kInt("flashKB", ESP.getFlashChipRealSize() / 1024)
    .kInt("sketchKB", ESP.getSketchSize() / 1024).kInt("freeSketchKB", ESP.getFreeSketchSpace() / 1024).kStr("sdk", ESP.getSdkVersion()).endObj();
+  {   // why the last boot happened; epc1 = crash PC (decode with addr2line against firmware.elf)
+    const rst_info *ri = ESP.getResetInfoPtr();
+    char epc[12], vaddr[12];
+    snprintf(epc, sizeof epc, "0x%08X", (unsigned)ri->epc1);
+    snprintf(vaddr, sizeof vaddr, "0x%08X", (unsigned)ri->excvaddr);
+    w.key("reset").beginObj().kInt("reason", ri->reason).kInt("exccause", ri->exccause).kStr("epc1", epc).kStr("excvaddr", vaddr).endObj();
+  }
   w.key("fs").beginObj().kBool("ok", storage::ok()).kInt("totalKB", fsT / 1024).kInt("usedKB", fsU / 1024).endObj();
   const NetInfo &n = a.net;
   char host[32]; snprintf(host, sizeof host, "%s.local", a.settings.hostname);
@@ -150,7 +166,8 @@ static void apiPositions() {
   w.key("positions").beginArr();
   for (uint8_t i = 0; i < a.posCount; i++) {
     const Position &p = a.positions[i]; const PositionResult &x = a.results[i];
-    w.beginObj().kInt("i", i).kStr("symbol", p.symbol).kStr("date", p.date).kNum("qty", p.qty, 6).kNum("buy", p.buy, 6)
+    w.beginObj().kInt("i", i).kInt("id", p.id).kStr("symbol", p.symbol).kStr("date", p.date)
+     .kNum("qty", p.qty, 6).kNum("oqty", p.oqty, 6).kNum("buy", p.buy, 6)
      .kNum("price", x.price).kNum("cost", x.cost).kNum("nav", x.nav).kNum("pl", x.pl).kNum("returnPct", x.retPct)
      .kStr("quote", quoteText(x.state)).kInt("quoteEpoch", x.quoteEpoch).endObj();
   }
@@ -212,6 +229,226 @@ static void apiJobGet() {
   if (j.state == market::JOB_OK || j.state == market::JOB_ERROR) market::consumeAddJob();
 }
 
+// ---------------------------------------------------------------- sale API (v1.1)
+// Transaction management (sell / undo / history / export / realised) needs the admin password:
+// these calls change (or expose) money, unlike the read-only market endpoints above.
+// Every literal here goes to flash (S_LIT): this build is tight on RAM and these strings are ~1.2 KB.
+static const char *saleStatusStr(uint8_t s) {
+  return s == SALE_ST_REVERSED ? "reversed" : s == REC_REVERSAL ? "reversal" : "valid";
+}
+
+static void writeSaleLite(JsonWriter &w, const SaleLite &l) {
+  w.beginObj()
+   .kInt("seq", l.seq).kInt("ts", l.ts).kStr("id", l.id).kStr("refId", l.refId)
+   .kInt("type", l.type).kStr("status", saleStatusStr(l.status))
+   .kStr("symbol", l.symbol).kStr("date", l.date)
+   .kNum("qty", l.qty, 8).kNum("price", l.price, 6).kNum("refPrice", l.refPrice, 6)
+   .kStr("priceSource", l.priceSource == PRICE_YAHOO ? "yahoo" : "manual")
+   .kNum("fee", l.fee, 4).kNum("gross", l.gross, 6).kNum("net", l.net, 6)
+   .kNum("cost", l.cost, 6).kNum("realised", l.realised, 6)
+   .endObj();
+}
+
+// {"symbol","date","method","mode","lotId","amount","qty","price","fee","priceSource","token"}
+static bool parseSaleReq(FlatJson &j, SaleRequest &r, char *err, size_t errN) {
+  memset(&r, 0, sizeof r);
+  r.price = r.refPrice = NAN;
+  if (!j.isStr("symbol") || !j.str("symbol")[0]) { snprintf(err, errN, "symbol required"); return false; }
+  strlcpy(r.symbol, j.str("symbol"), sizeof r.symbol);
+  if (!j.isStr("date") || strlen(j.str("date")) != 10) { snprintf(err, errN, "date required (YYYY-MM-DD)"); return false; }
+  strlcpy(r.date, j.str("date"), sizeof r.date);
+  const char *method = j.str("method", "fifo");
+  r.method = !strcmp(method, "specific") ? SALE_SPECIFIC : !strcmp(method, "fifo") ? SALE_FIFO : 0xFF;
+  if (r.method == 0xFF) { snprintf(err, errN, "method must be fifo or specific"); return false; }
+  const char *mode = j.str("mode", "qty");
+  r.mode = !strcmp(mode, "thb") ? SALE_BY_THB : !strcmp(mode, "all") ? SALE_BY_ALL
+         : !strcmp(mode, "qty") ? SALE_BY_QTY : 0xFF;
+  if (r.mode == 0xFF) { snprintf(err, errN, "mode must be thb, qty or all"); return false; }
+  double v;
+  if (j.num("lotId", v, true)) { if (v < 0 || v > 65535) { snprintf(err, errN, "bad lotId"); return false; } r.lotId = (uint16_t)v; }
+  if (j.num("amount", v)) r.amount = v;
+  if (j.num("qty", v)) r.qty = v;
+  if (j.num("price", v)) r.price = v;
+  if (j.num("refPrice", v)) r.refPrice = v;
+  if (j.num("fee", v)) r.fee = v;
+  if (j.num("token", v)) r.token = (uint32_t)v;
+  const char *ps = j.str("priceSource", "manual");
+  r.priceSource = !strcmp(ps, "yahoo") ? PRICE_YAHOO : PRICE_MANUAL;
+  return true;
+}
+
+static void writeSalePreview(JsonWriter &w, const SalePreview &pv) {
+  w.key("preview").beginObj();
+  w.kStr("symbol", pv.symbol).kStr("date", pv.date)
+   .kNum("price", pv.price).kNum("refPrice", pv.refPrice)
+   .kStr("priceSource", pv.priceSource == PRICE_YAHOO ? "yahoo" : "manual")
+   .kNum("qty", pv.qty, 8).kNum("available", pv.available, 8).kNum("fee", pv.fee, 4)
+   .kNum("gross", pv.gross, 6).kNum("net", pv.net, 6).kNum("cost", pv.cost, 6).kNum("realised", pv.realised, 6)
+   .kInt("token", pv.token);
+  w.key("alloc").beginArr();
+  for (uint8_t i = 0; i < pv.nAlloc; i++) {
+    const LotAlloc &a = pv.alloc[i];
+    w.beginObj().kInt("lot", a.lot).kStr("date", a.date).kNum("buy", a.buy, 6)
+     .kNum("oqty", a.oqty, 8).kNum("before", a.before, 8).kNum("after", a.after, 8).endObj();
+  }
+  w.endArr().endObj();
+}
+
+static void apiRealised() {
+  if (!requireAuth()) return;
+  const AppState &a = g_app;
+  const RealisedSummary &s = a.realised;
+  Reply r(200); JsonWriter &w = r.w;
+  w.beginObj()
+   .kBool("valid", s.valid)
+   .kNum("pl", s.valid ? s.pl : NAN)
+   .kNum("lifetimePl", a.summary.lifetimePl)
+   .kInt("count", s.count).kInt("reversed", s.reversed).kInt("records", s.records)
+   .kInt("limit", LEDGER_LIMIT).kBool("warn", s.warn).kBool("full", s.full)
+   .kBool("recovery", s.recovery).kBool("badLine", s.badLine)
+   .kBool("hasLast", s.hasLast).kStr("lastId", s.lastId).kStr("lastSymbol", s.lastSymbol)
+   .kStr("lastDate", s.lastDate).kNum("lastRealised", s.lastRealised).kInt("lastTs", s.lastTs);
+  w.key("years").beginArr();
+  for (uint8_t i = 0; i < s.nYears; i++) w.beginObj().kInt("year", s.year[i]).kNum("pl", s.yearPl[i]).endObj();
+  w.endArr().endObj();
+}
+
+static void apiSales() {
+  if (!requireAuth()) return;
+  uint16_t offset = 0, limit = SALES_PAGE_MAX;
+  if (server.hasArg("offset")) { long v = server.arg("offset").toInt(); if (v < 0) v = 0; offset = (uint16_t)(v > 65535 ? 65535 : v); }
+  if (server.hasArg("limit")) { long v = server.arg("limit").toInt(); if (v < 1) v = 1; limit = (uint16_t)(v > SALES_PAGE_MAX ? SALES_PAGE_MAX : v); }
+  char symbol[SYMBOL_LEN] = "";
+  if (server.hasArg("symbol")) strlcpy(symbol, server.arg("symbol").c_str(), sizeof symbol);
+  std::unique_ptr<storage::SalePage> pagep(new (std::nothrow) storage::SalePage);   // ~1 KB: heap, not the request stack
+  if (!pagep) { sendErr(500, "out of memory"); return; }
+  storage::SalePage &page = *pagep;
+  char err[64] = "";
+  if (!storage::salePage(g_app, symbol, offset, limit, page, err, sizeof err)) { sendErr(500, err); return; }
+  Reply r(200); JsonWriter &w = r.w;
+  w.beginObj().kStr("symbol", symbol).kInt("total", page.total).kInt("offset", offset)
+   .kInt("count", page.count).kInt("limit", limit)
+   .kInt("records", g_app.realised.records).kInt("limitRecords", LEDGER_LIMIT)
+   .kBool("warn", g_app.realised.warn).kBool("full", g_app.realised.full)
+   .kNum("pl", g_app.realised.valid ? g_app.realised.pl : NAN);
+  w.key("sales").beginArr();
+  for (uint16_t i = 0; i < page.count; i++) writeSaleLite(w, page.rows[i]);
+  w.endArr().endObj();
+}
+
+static void apiSalesExport() {
+  if (!requireAuth()) return;
+  char symbol[SYMBOL_LEN] = "";
+  if (server.hasArg("symbol")) strlcpy(symbol, server.arg("symbol").c_str(), sizeof symbol);
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Cache-Control", "no-store");
+  server.sendHeader("Content-Disposition", "attachment; filename=\"sells.csv\"");
+  if (!server.chunkedResponseModeStart(200, "text/csv")) { sendErr(500, "chunked not supported"); return; }
+  char err[64] = "";
+  if (!storage::saleCsv(g_app, symbol, sinkChunk, nullptr, err, sizeof err)) Serial.printf("[csv] %s\n", err);
+  server.chunkedResponseFinalize();
+}
+
+static void apiSaleJob() {
+  if (!requireAuth()) return;
+  const market::SalePriceJob &j = market::salePriceJob();
+  const char *st = j.state == market::JOB_PENDING ? "pending" : j.state == market::JOB_OK ? "ok"
+                 : j.state == market::JOB_ERROR ? "error" : "idle";
+  Reply r(200); JsonWriter &w = r.w;
+  w.beginObj().kStr("state", st).kStr("symbol", j.symbol).kStr("date", j.date)
+   .kNum("price", j.state == market::JOB_OK ? j.price : NAN).kStr("error", j.error).endObj();
+}
+
+// Input -> Calculate Preview. Without an execution price the historical close is fetched first
+// and the reply is 202 {state:"pending"}; the client re-posts the same body once the job is ok.
+static void postSalePreview() {
+  if (!requireAuth()) return;
+  HEAP_JSON(j, return);
+  char err[72] = "";
+  if (!body(j, err, sizeof err)) { sendErr(400, err); return; }
+  SaleRequest req;
+  if (!parseSaleReq(j, req, err, sizeof err)) { sendErr(400, err); return; }
+  if (!(isNum(req.price) && req.price > 0)) {
+    const market::SalePriceJob &job = market::salePriceJob();
+    bool same = job.state == market::JOB_OK && !strcmp(job.symbol, req.symbol) && !strcmp(job.date, req.date);
+    if (!same) {
+      if (!market::requestSalePrice(req.symbol, req.date)) { sendErr(409, "a price lookup is already running"); return; }
+      const market::SalePriceJob &n = market::salePriceJob();
+      if (n.state == market::JOB_ERROR) { char m[48]; strlcpy(m, n.error, sizeof m); market::consumeSalePriceJob(); sendErr(400, m); return; }
+      sendJson(202, "{\"ok\":true,\"state\":\"pending\"}");
+      return;
+    }
+    req.price = job.price;
+    req.priceSource = PRICE_YAHOO;
+  }
+  SalePreview pv;
+  if (!storage::salePreview(g_app, req, pv)) { sendErr(400, pv.error[0] ? pv.error : "invalid sale"); return; }
+  Reply r(200); JsonWriter &w = r.w;
+  w.beginObj().kBool("ok", true).kStr("state", "ready");
+  writeSalePreview(w, pv);
+  w.endObj();
+}
+
+// Confirm -> Commit. The token proves the preview was computed from the portfolio as it is now.
+static void postSaleConfirm() {
+  if (!requireAuth()) return;
+  char err[80] = "";
+  int code = 400;
+  SaleRequest req;
+  {
+    // FlatJson is 1.3 KB: parse on the heap and drop it before the commit goes deep into LittleFS
+    std::unique_ptr<FlatJson> jp(new (std::nothrow) FlatJson);
+    if (!jp) { sendErr(500, "out of memory"); return; }
+    if (!body(*jp, err, sizeof err)) { sendErr(400, err); return; }
+    if (!parseSaleReq(*jp, req, err, sizeof err)) { sendErr(400, err); return; }
+  }
+  if (!req.token) { sendErr(400, "preview token required"); return; }
+  SalePreview *pvp = (SalePreview *)calloc(1, sizeof(SalePreview));   // ~780 B: heap, the handler stack is small
+  if (!pvp) { sendErr(500, "out of memory"); return; }
+  SalePreview &pv = *pvp;
+  if (!storage::saleCommit(g_app, req, pv, err, sizeof err, &code)) { free(pvp); sendErr(code, err); return; }
+  market::positionsChanged();
+  char txId[16];
+  snprintf(txId, sizeof txId, "TX-%06lu", (unsigned long)(g_app.pmeta.nextTxn ? g_app.pmeta.nextTxn - 1 : 0));
+  Reply r(200); JsonWriter &w = r.w;
+  w.beginObj().kBool("ok", true).kStr("state", "committed").kStr("id", txId).kInt("seq", g_app.pmeta.appliedSeq);
+  writeSalePreview(w, pv);
+  w.endObj();
+  free(pvp);
+}
+
+static void postSaleReverse() {
+  if (!requireAuth()) return;
+  char err[80] = "";
+  int code = 400;
+  double seq = 0;
+  {
+    std::unique_ptr<FlatJson> jp(new (std::nothrow) FlatJson);
+    if (!jp) { sendErr(500, "out of memory"); return; }
+    if (!body(*jp, err, sizeof err)) { sendErr(400, err); return; }
+    if (!jp->num("seq", seq, true) || seq < 0 || seq > 4294967295.0) { sendErr(400, "seq required"); return; }
+  }
+  if (!storage::saleReverse(g_app, (uint32_t)seq, err, sizeof err, &code)) { sendErr(code, err); return; }
+  market::positionsChanged();
+  sendOk();
+}
+
+// Permanently removes a sale and its reversal from the history (an active sale is reversed first).
+static void postSaleDelete() {
+  if (!requireAuth()) return;
+  char err[80] = "";
+  int code = 400;
+  double seq = 0;
+  {
+    HEAP_JSON(j, return);
+    if (!body(j, err, sizeof err)) { sendErr(400, err); return; }
+    if (!j.num("seq", seq, true) || seq < 1 || seq > 4294967295.0) { sendErr(400, "seq required"); return; }
+  }
+  if (!storage::saleDelete(g_app, (uint32_t)seq, err, sizeof err, &code)) { market::positionsChanged(); sendErr(code, err); return; }
+  market::positionsChanged();
+  sendOk();
+}
+
 // ---------------------------------------------------------------- Wi-Fi API
 static void apiWifiStatus() {
   const NetInfo &n = g_app.net;
@@ -245,7 +482,7 @@ static void apiWifiScan() {
 // ---------------------------------------------------------------- write API
 static void postWifiConnect() {
   if (!requireAuth()) return;
-  FlatJson j; char err[40] = "";
+  HEAP_JSON(j, return); char err[40] = "";
   if (!body(j, err, sizeof err) || !j.isStr("ssid")) { sendErr(400, err[0] ? err : "ssid required"); return; }
   const char *ssid = j.str("ssid"), *pass = j.str("password");
   size_t sl = strlen(ssid), pl = strlen(pass);
@@ -257,7 +494,7 @@ static void postWifiConnect() {
 
 static void postPositions() {
   if (!requireAuth()) return;
-  FlatJson j; char err[48] = "";
+  HEAP_JSON(j, return); char err[48] = "";
   if (!body(j, err, sizeof err)) { sendErr(400, err); return; }
   if (!j.isStr("symbol") || !j.isStr("date")) { sendErr(400, "symbol and date are required"); return; }
   const char *sym = j.str("symbol"), *date = j.str("date");
@@ -271,9 +508,9 @@ static void postPositions() {
     return;
   }
   if (j.num("qty", qty) && j.num("buy", buy)) {
-    AddResult r = portfolioAdd(g_app.positions, g_app.posCount, sym, date, qty, buy, epochNow());
+    AddResult r = portfolioAdd(g_app.positions, g_app.posCount, g_app.pmeta, sym, date, qty, buy, epochNow());
     if (r != ADD_OK && r != ADD_UPDATED) { sendErr(400, addResultText(r)); return; }
-    bool saved = storage::savePortfolio(g_app.positions, g_app.posCount);
+    bool saved = storage::savePortfolio(g_app);
     market::positionsChanged();
     if (!saved) { sendErr(500, "added, but saving to flash failed"); return; }
     sendJson(200, "{\"ok\":true,\"state\":\"ok\"}");
@@ -284,10 +521,10 @@ static void postPositions() {
 
 static void postPositionsDelete() {
   if (!requireAuth()) return;
-  FlatJson j; double idx; char err[40] = "";
+  HEAP_JSON(j, return); double idx; char err[40] = "";
   if (!body(j, err, sizeof err)) { sendErr(400, err); return; }
-  if (!j.num("index", idx, true) || idx < 0 || idx > 255 || !portfolioDelete(g_app.positions, g_app.posCount, (uint8_t)idx)) { sendErr(400, "bad index"); return; }
-  bool saved = storage::savePortfolio(g_app.positions, g_app.posCount);
+  if (!j.num("index", idx, true) || idx < 0 || idx > 255 || !portfolioDelete(g_app.positions, g_app.posCount, g_app.pmeta, (uint8_t)idx)) { sendErr(400, "bad index"); return; }
+  bool saved = storage::savePortfolio(g_app);
   market::positionsChanged();
   if (!saved) { sendErr(500, "deleted, but saving to flash failed"); return; }
   sendOk();
@@ -295,7 +532,7 @@ static void postPositionsDelete() {
 
 static void postSettings() {
   if (!requireAuth()) return;
-  FlatJson j; char err[64] = "";
+  HEAP_JSON(j, return); char err[64] = "";
   if (!body(j, err, sizeof err)) { sendErr(400, err); return; }
   Settings n = g_app.settings; bool hc = false;
   if (!settingsApply(n, j, err, sizeof err, &hc)) { sendErr(400, err); return; }
@@ -311,7 +548,7 @@ static void postSettings() {
 
 static void postRefresh() {
   if (!requireAuth()) return;
-  FlatJson j; body(j);
+  HEAP_JSON(j, return); body(j);
   const char *what = j.str("what", "all");
   market::Refresh r = market::REF_ALL;
   if (!strcmp(what, "quote")) r = market::REF_QUOTE; else if (!strcmp(what, "charts")) r = market::REF_CHARTS; else if (!strcmp(what, "portfolio")) r = market::REF_PORTFOLIO;
@@ -324,7 +561,7 @@ static void postCacheClear() { if (!requireAuth()) return; market::clearCache();
 static void postWifiReconnect() { if (!requireAuth()) return; wifimgr::requestReconnect(); sendOk(); }
 
 static bool confirmed(const char *word) {
-  FlatJson j; if (!body(j)) return false;
+  HEAP_JSON(j, return false); if (!body(j)) return false;
   return j.isStr("confirm") && !strcmp(j.str("confirm"), word);
 }
 
@@ -370,6 +607,14 @@ void begin() {
   server.on("/api/portfolio", HTTP_GET, apiPortfolio);
   server.on("/api/positions", HTTP_GET, apiPositions);
   server.on("/api/positions/job", HTTP_GET, apiJobGet);
+  server.on("/api/realised", HTTP_GET, apiRealised);
+  server.on("/api/sales", HTTP_GET, apiSales);
+  server.on("/api/sales/export", HTTP_GET, apiSalesExport);
+  server.on("/api/sales/job", HTTP_GET, apiSaleJob);
+  server.on("/api/sales/preview", HTTP_POST, postSalePreview);
+  server.on("/api/sales/confirm", HTTP_POST, postSaleConfirm);
+  server.on("/api/sales/reverse", HTTP_POST, postSaleReverse);
+  server.on("/api/sales/delete", HTTP_POST, postSaleDelete);
   server.on("/api/market", HTTP_GET, apiMarket);
   server.on("/api/chart", HTTP_GET, apiChart);
   server.on("/api/wifi/status", HTTP_GET, apiWifiStatus);

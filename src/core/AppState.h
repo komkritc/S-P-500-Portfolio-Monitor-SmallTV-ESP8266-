@@ -42,6 +42,10 @@ struct AppState {
   // staleness = 3 x the effective interval.
   uint16_t effPortfolioS, effQuoteS, effChartS;
 
+  // ---- sale transactions (v1.1) ----
+  PortfolioMeta pmeta;         // /portfolio.json header: version, appliedSeq, next ids (confirm tokens)
+  RealisedSummary realised;    // aggregates over /sells.jsonl, rebuilt by the boot scan
+
   // ---- derived outputs (written only by appRecompute) ----
   PositionResult   results[MAX_POSITIONS];
   PortfolioSummary summary;

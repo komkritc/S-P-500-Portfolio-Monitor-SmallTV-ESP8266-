@@ -7,6 +7,7 @@
 #include "Widgets.h"
 #include "PortfolioScreen.h"
 #include "PositionsScreen.h"
+#include "RealisedScreen.h"
 #include "MarketScreen.h"
 #include "ChartRenderer.h"
 
@@ -22,7 +23,7 @@ static uint32_t s_viewSince = 0, s_lastDraw = 0, s_lastRev = 0xFFFFFFFFu, s_char
 static bool s_otaMode = false;
 static int s_otaPct = -1;
 static uint8_t s_lastPos = 255, s_lastDefault = 255;
-static bool s_lastAp = false, s_lastDash = true;
+static bool s_lastAp = false, s_lastDash = true, s_lastRealised = false;
 static ViewKind s_shownKind = V_PORTFOLIO;
 static uint8_t s_shownArg = 255;
 
@@ -130,8 +131,9 @@ void otaResult(bool ok, const char *msg) {
 static void rebuildViews(const AppState &a) {
   bool ap = a.net.mode == NetInfo::NET_AP_SETUP || a.net.mode == NetInfo::NET_AP_RESCUE;
   bool dash = a.net.mode != NetInfo::NET_AP_SETUP;
-  s_nViews = buildViews(s_views, MAX_VIEWS, a.posCount, a.settings.defaultRange, ap, dash);
-  s_lastPos = a.posCount; s_lastDefault = a.settings.defaultRange; s_lastAp = ap; s_lastDash = dash;
+  bool realised = a.realised.valid && a.realised.count > 0;      // page 4 only exists once a sale stands
+  s_nViews = buildViews(s_views, MAX_VIEWS, a.posCount, a.settings.defaultRange, ap, dash, realised);
+  s_lastPos = a.posCount; s_lastDefault = a.settings.defaultRange; s_lastAp = ap; s_lastDash = dash; s_lastRealised = realised;
   // keep showing the same view when the list changes
   uint8_t keep = 0;
   for (uint8_t i = 0; i < s_nViews; i++) if (s_views[i].kind == s_shownKind && s_views[i].arg == s_shownArg) { keep = i; break; }
@@ -144,7 +146,9 @@ void loop(const AppState &a) {
 
   bool ap = a.net.mode == NetInfo::NET_AP_SETUP || a.net.mode == NetInfo::NET_AP_RESCUE;
   bool dash = a.net.mode != NetInfo::NET_AP_SETUP;
-  if (!s_nViews || a.posCount != s_lastPos || a.settings.defaultRange != s_lastDefault || ap != s_lastAp || dash != s_lastDash) rebuildViews(a);
+  bool realised = a.realised.valid && a.realised.count > 0;
+  if (!s_nViews || a.posCount != s_lastPos || a.settings.defaultRange != s_lastDefault || ap != s_lastAp || dash != s_lastDash
+      || realised != s_lastRealised) rebuildViews(a);
   if (!s_nViews) return;
 
   // advance
@@ -171,6 +175,7 @@ void loop(const AppState &a) {
   switch (v.kind) {
     case V_PORTFOLIO: drawPortfolio(s_ui, a, s_full); break;
     case V_POSITIONS: drawPositions(s_ui, a, v.arg, s_full); break;
+    case V_REALISED: drawRealised(s_ui, a, s_full); break;
     case V_MARKET: {
       ChartParams cp = {v.arg, a.settings.tzMode, a.settings.localOffsetMin, a.chartStale[v.arg]};
       uint32_t sig = chartSignature(a.charts[v.arg], cp);

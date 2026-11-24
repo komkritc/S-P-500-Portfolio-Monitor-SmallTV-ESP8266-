@@ -1,7 +1,8 @@
 // StorageManager.h - LittleFS persistence (replaces the ESP32 Preferences / LittleFS usage of the original).
 //
 //   /settings.json   Settings (+ admin password), JSON
-//   /portfolio.json  positions, same format as the original sketch
+//   /portfolio.json  positions + lot/ledger meta (v2 format, still readable by v1.0)
+//   /sells.jsonl     append-only sale ledger (+ /txn.pending in-flight journal, see SaleStore)
 //   /wifi.json       {"ssid","pass"}  - never exposed through any API
 //   /cache.bin       last good quotes + charts (binary, CRC-checked), so a reboot while offline still shows data
 //
@@ -16,11 +17,15 @@ bool begin();                         // mounts LittleFS, formats it on first us
 bool ok();
 void fsInfo(uint32_t &totalBytes, uint32_t &usedBytes);
 bool busy();                          // true while a write is in progress (restart/OTA wait for it)
+void busyBegin();                     // hold/release the flag around a multi-step write (SaleStore)
+void busyEnd();
+// Writes <path>.tmp and renames it over <path>, so a power cut leaves the old or the new file.
+bool writeAtomic(const char *path, const uint8_t *data, size_t len);
 
 void loadSettings(Settings &s);       // keeps defaults for anything missing/invalid
 bool saveSettings(const Settings &s);
-uint8_t loadPortfolio(Position *pos);
-bool savePortfolio(const Position *pos, uint8_t n);
+uint8_t loadPortfolio(AppState &a);            // positions + pmeta (v1 files auto-migrate)
+bool savePortfolio(const AppState &a);
 
 struct WifiCreds { char ssid[33]; char pass[65]; };
 bool loadWifi(WifiCreds &w);          // false if none saved

@@ -373,36 +373,46 @@ static void testPortfolio() {
   CHECK(!normalizeSymbol("ABCDEFGHIJKLMNOPQ", s, sizeof s) && !normalizeSymbol("A?B", s, sizeof s) && !normalizeSymbol(nullptr, s, sizeof s));
 
   Position pos[MAX_POSITIONS]; uint8_t n = 0;
-  CHECK(portfolioAdd(pos, n, "sp500", "2026-01-02", 10, 6000, 0) == ADD_OK && n == 1 && !strcmp(pos[0].symbol, "^GSPC"));
-  CHECK(portfolioAdd(pos, n, "^GSPC", "2026-01-02", 12, 6100, 0) == ADD_UPDATED && n == 1 && pos[0].qty == 12);   // same symbol+date replaces
-  CHECK(portfolioAdd(pos, n, "^GSPC", "2026-01-03", 1, 6000, 0) == ADD_OK && n == 2);
-  CHECK(portfolioAdd(pos, n, "^GSPC", "2026-02-30", 1, 6000, 0) == ADD_BAD_DATE);
-  CHECK(portfolioAdd(pos, n, "^GSPC", "2026-01-04", 0, 6000, 0) == ADD_BAD_QTY);
-  CHECK(portfolioAdd(pos, n, "^GSPC", "2026-01-04", 1, -5, 0) == ADD_BAD_PRICE);
-  CHECK(portfolioAdd(pos, n, "^G SPC", "2026-01-04", 1, 5, 0) == ADD_BAD_SYMBOL);
-  CHECK(portfolioAdd(pos, n, "^GSPC", "2030-01-04", 1, 5, U(2026, 11, 20)) == ADD_BAD_DATE);   // future
-  CHECK(portfolioAdd(pos, n, "^GSPC", "2026-11-21", 1, 5, U(2026, 11, 20, 23)) == ADD_OK);      // exchange "today" can be ahead of UTC
-  CHECK(portfolioDelete(pos, n, 0) && n == 2 && !strcmp(pos[0].date, "2026-01-03") && !portfolioDelete(pos, n, 5));
+  PortfolioMeta pm; memset(&pm, 0, sizeof pm);
+  CHECK(portfolioAdd(pos, n, pm, "sp500", "2026-01-02", 10, 6000, 0) == ADD_OK && n == 1 && !strcmp(pos[0].symbol, "^GSPC"));
+  CHECK(portfolioAdd(pos, n, pm, "^GSPC", "2026-01-02", 12, 6100, 0) == ADD_UPDATED && n == 1 && pos[0].qty == 12);   // same symbol+date replaces
+  CHECK(portfolioAdd(pos, n, pm, "^GSPC", "2026-01-03", 1, 6000, 0) == ADD_OK && n == 2);
+  CHECK(portfolioAdd(pos, n, pm, "^GSPC", "2026-02-30", 1, 6000, 0) == ADD_BAD_DATE);
+  CHECK(portfolioAdd(pos, n, pm, "^GSPC", "2026-01-04", 0, 6000, 0) == ADD_BAD_QTY);
+  CHECK(portfolioAdd(pos, n, pm, "^GSPC", "2026-01-04", 1, -5, 0) == ADD_BAD_PRICE);
+  CHECK(portfolioAdd(pos, n, pm, "^G SPC", "2026-01-04", 1, 5, 0) == ADD_BAD_SYMBOL);
+  CHECK(portfolioAdd(pos, n, pm, "^GSPC", "2030-01-04", 1, 5, U(2026, 11, 20)) == ADD_BAD_DATE);   // future
+  CHECK(portfolioAdd(pos, n, pm, "^GSPC", "2026-11-21", 1, 5, U(2026, 11, 20, 23)) == ADD_OK);      // exchange "today" can be ahead of UTC
+  CHECK(pos[0].id == 1 && pos[1].id == 2 && pos[0].oqty == 12 && pm.nextLotId == 4 && pm.ver >= 4);  // v1.1 lot ids + original qty
+  CHECK(portfolioDelete(pos, n, pm, 0) && n == 2 && !strcmp(pos[0].date, "2026-01-03") && !portfolioDelete(pos, n, pm, 5));
   // caps
-  Position big[MAX_POSITIONS]; uint8_t bn = 0; char d[11];
-  for (int i = 0; i < MAX_POSITIONS; i++) { snprintf(d, sizeof d, "2026-01-%02d", i % 28 + 1); char sy[8]; snprintf(sy, sizeof sy, "S%d", i % 8); (void)portfolioAdd(big, bn, sy, d, 1, 1, 0); }
+  Position big[MAX_POSITIONS]; uint8_t bn = 0; char d[11]; PortfolioMeta bm; memset(&bm, 0, sizeof bm);
+  for (int i = 0; i < MAX_POSITIONS; i++) { snprintf(d, sizeof d, "2026-01-%02d", i % 28 + 1); char sy[8]; snprintf(sy, sizeof sy, "S%d", i % 8); (void)portfolioAdd(big, bn, bm, sy, d, 1, 1, 0); }
   CHECK(bn == MAX_POSITIONS || bn >= 20);
-  while (bn < MAX_POSITIONS) { snprintf(d, sizeof d, "2025-02-%02d", bn % 28 + 1); if (portfolioAdd(big, bn, "S1", d, 1, 1, 0) == ADD_FULL) break; }
-  CHECK(portfolioAdd(big, bn, "S1", "2020-05-05", 1, 1, 0) == ADD_FULL);
-  { Position p9[MAX_POSITIONS]; uint8_t k = 0; for (int i = 0; i < 8; i++) { char sy[8]; snprintf(sy, sizeof sy, "T%d", i); CHECK(portfolioAdd(p9, k, sy, "2026-01-02", 1, 1, 0) == ADD_OK); }
-    CHECK(portfolioAdd(p9, k, "T9", "2026-01-02", 1, 1, 0) == ADD_TOO_MANY_SYMBOLS); CHECK(portfolioAdd(p9, k, "T3", "2026-01-05", 1, 1, 0) == ADD_OK); }
+  while (bn < MAX_POSITIONS) { snprintf(d, sizeof d, "2025-02-%02d", bn % 28 + 1); if (portfolioAdd(big, bn, bm, "S1", d, 1, 1, 0) == ADD_FULL) break; }
+  CHECK(portfolioAdd(big, bn, bm, "S1", "2020-05-05", 1, 1, 0) == ADD_FULL);
+  { Position p9[MAX_POSITIONS]; uint8_t k = 0; PortfolioMeta m9; memset(&m9, 0, sizeof m9);
+    for (int i = 0; i < 8; i++) { char sy[8]; snprintf(sy, sizeof sy, "T%d", i); CHECK(portfolioAdd(p9, k, m9, sy, "2026-01-02", 1, 1, 0) == ADD_OK); }
+    CHECK(portfolioAdd(p9, k, m9, "T9", "2026-01-02", 1, 1, 0) == ADD_TOO_MANY_SYMBOLS); CHECK(portfolioAdd(p9, k, m9, "T3", "2026-01-05", 1, 1, 0) == ADD_OK); }
   double q; CHECK(qtyFromThb(10000, 6382.1, q) && fabs(q - 1.566) < 1e-3); CHECK(!qtyFromThb(0, 5, q) && !qtyFromThb(5, 0, q) && !qtyFromThb(NAN, 5, q));
 
   // round trip + legacy file (original sketch format, any key order, missing date)
-  std::string out; { JsonWriter w(sinkStr, &out); portfolioWrite(w, pos, n); }
-  Position back[MAX_POSITIONS]; uint8_t bk = portfolioLoad(back, out.data(), out.size());
+  std::string out; { JsonWriter w(sinkStr, &out); portfolioWrite(w, pos, n, pm); }
+  CHECK(out.find("\"version\":2") != std::string::npos && out.find("\"appliedSeq\"") != std::string::npos && out.find("\"oqty\"") != std::string::npos);
+  Position back[MAX_POSITIONS]; uint8_t bk; PortfolioMeta pm2; memset(&pm2, 0, sizeof pm2);
+  bk = portfolioLoad(back, out.data(), out.size(), pm2);
   CHECK(bk == n && !strcmp(back[0].symbol, pos[0].symbol) && !strcmp(back[0].date, pos[0].date) && fabs(back[0].qty - pos[0].qty) < 1e-9 && fabs(back[1].buy - pos[1].buy) < 1e-6);
+  CHECK(pm2.ver == pm.ver && pm2.appliedSeq == pm.appliedSeq && pm2.nextLotId == pm.nextLotId && back[0].id == pos[0].id && fabs(back[0].oqty - pos[0].oqty) < 1e-9);
   const char *legacy = "{\"positions\":[{\"symbol\":\"^GSPC\",\"qty\":39.17,\"buy\":6382.1,\"date\":\"2025-11-20\"},"
                        "{\"date\":\"2025-12-01\",\"buy\":6500,\"qty\":2,\"symbol\":\"spx\"},{\"symbol\":\"X\",\"qty\":\"bad\",\"buy\":1},"
                        "{\"symbol\":\"^GSPC\",\"qty\":1,\"buy\":2},{\"symbol\":\"\",\"qty\":1,\"buy\":2,\"date\":\"2025-01-01\"}]}";
-  bk = portfolioLoad(back, legacy, strlen(legacy));
+  PortfolioMeta lm; memset(&lm, 0, sizeof lm);
+  bk = portfolioLoad(back, legacy, strlen(legacy), lm);
   CHECK(bk == 3 && !strcmp(back[1].symbol, "^SPX") && !strcmp(back[1].date, "2025-12-01") && back[1].qty == 2 && back[2].date[0] == 0);
-  CHECK(portfolioLoad(back, "{\"positions\":[", 14) == 0 && portfolioLoad(back, "garbage", 7) == 0);
+  CHECK(back[0].id == 1 && back[1].id == 2 && back[2].id == 3 && lm.nextLotId == 4 && lm.ver == 1);   // v1 file migrates in place
+  CHECK(fabs(back[0].oqty - 39.17) < 1e-9 && back[0].oqty == back[0].qty);
+  PortfolioMeta bad; memset(&bad, 0, sizeof bad);
+  CHECK(portfolioLoad(back, "{\"positions\":[", 14, bad) == 0 && portfolioLoad(back, "garbage", 7, bad) == 0);
 
   // book sync keeps existing quotes, drops unused, adds new
   QuoteBook b; memset(&b, 0, sizeof b); addQ(b, "^GSPC", 100); addQ(b, "OLD", 5);
@@ -447,7 +457,7 @@ static void testSettings() {
 
 static void testAppState() {
   static AppState a; appInit(a);
-  CHECK(a.charts[0].cap == 96 && a.charts[1].cap == 144 && a.charts[2].cap == 40 && a.charts[1].t == a.chartT + 96 && a.charts[2].v == a.chartV + 240);
+  CHECK(a.charts[0].cap == 80 && a.charts[1].cap == 112 && a.charts[2].cap == 24 && a.charts[1].t == a.chartT + 80 && a.charts[2].v == a.chartV + 192);
   strcpy(a.positions[0].symbol, "^GSPC"); a.positions[0].qty = 2; a.positions[0].buy = 3000; a.posCount = 1; strcpy(a.positions[0].date, "2026-01-02");
   bookSync(a.book, a.positions, a.posCount);
   appRecompute(a, 1000, 0);
@@ -498,21 +508,24 @@ static void testTicks() {
 static void testViews() {
   using namespace display;
   View v[MAX_VIEWS]; uint8_t n;
-  n = buildViews(v, MAX_VIEWS, 1, RANGE_1D, false, true);
+  n = buildViews(v, MAX_VIEWS, 1, RANGE_1D, false, true, false);
   CHECK(n == 5 && v[0].kind == V_PORTFOLIO && v[1].kind == V_POSITIONS && v[1].arg == 0 && v[2].kind == V_MARKET && v[2].arg == 0 && v[3].arg == 1 && v[4].arg == 2);
   CHECK(ROWS_PER_WINDOW == 2);
-  n = buildViews(v, MAX_VIEWS, 7, RANGE_1D, false, true);       // 7 rows -> 4 windows of 2: every row reachable
+  n = buildViews(v, MAX_VIEWS, 7, RANGE_1D, false, true, false);      // 7 rows -> 4 windows of 2: every row reachable
   CHECK(n == 1 + 4 + 3 && v[1].arg == 0 && v[2].arg == 1 && v[3].arg == 2 && v[4].arg == 3 && v[4].kind == V_POSITIONS && v[5].kind == V_MARKET);
-  CHECK(windowCount(0) == 1 && windowCount(2) == 1 && windowCount(3) == 2 && windowCount(24) == 12);
-  n = buildViews(v, MAX_VIEWS, 24, RANGE_5D, true, true);        // max positions + AP screen still fits
-  CHECK(n == 1 + 12 + 3 + 1 && n <= MAX_VIEWS && v[13].kind == V_MARKET && v[13].arg == 1 && v[14].arg == 2 && v[15].arg == 0 && v[16].kind == V_AP);
-  n = buildViews(v, MAX_VIEWS, 0, RANGE_1M, false, true);        // default range 1M: starts there, then wraps
-  CHECK(n == 5 && v[2].arg == 2 && v[3].arg == 0 && v[4].arg == 1);
-  n = buildViews(v, MAX_VIEWS, 5, RANGE_1D, false, false);       // no saved Wi-Fi: AP screen only
+  CHECK(windowCount(0) == 1 && windowCount(2) == 1 && windowCount(3) == 2 && windowCount(MAX_POSITIONS) == 6);
+  n = buildViews(v, MAX_VIEWS, MAX_POSITIONS, RANGE_5D, true, true, false);   // max positions + AP screen still fits
+  CHECK(n == 1 + 6 + 3 + 1 && n <= MAX_VIEWS && v[7].kind == V_MARKET && v[7].arg == 1 && v[8].arg == 2 && v[9].arg == 0 && v[10].kind == V_AP);
+  n = buildViews(v, MAX_VIEWS, MAX_POSITIONS, RANGE_5D, true, true, true);    // ... and page 4 slots in before the charts
+  CHECK(n == 1 + 6 + 1 + 3 + 1 && n <= MAX_VIEWS && v[7].kind == V_REALISED && v[7].arg == 0
+        && v[8].kind == V_MARKET && v[8].arg == 1 && v[9].arg == 2 && v[10].arg == 0 && v[11].kind == V_AP);
+  n = buildViews(v, MAX_VIEWS, 0, RANGE_1M, false, true, true);       // default range 1M: starts there, then wraps
+  CHECK(n == 6 && v[2].kind == V_REALISED && v[3].arg == 2 && v[4].arg == 0 && v[5].arg == 1);
+  n = buildViews(v, MAX_VIEWS, 5, RANGE_1D, false, false, false);     // no saved Wi-Fi: AP screen only
   CHECK(n == 1 && v[0].kind == V_AP);
-  n = buildViews(v, 3, 24, RANGE_1D, true, true); CHECK(n == 3);                // never overruns the caller's array
+  n = buildViews(v, 3, MAX_POSITIONS, RANGE_1D, true, true, true); CHECK(n == 3);   // never overruns the caller's array
   CHECK(nextIndex(4, 5) == 0 && nextIndex(0, 5) == 1 && nextIndex(0, 0) == 0);
-  CHECK(pageOf(V_PORTFOLIO) == 0 && pageOf(V_POSITIONS) == 1 && pageOf(V_MARKET) == 2);
+  CHECK(pageOf(V_PORTFOLIO) == 0 && pageOf(V_POSITIONS) == 1 && pageOf(V_MARKET) == 2 && pageOf(V_REALISED) == 3 && pageOf(V_AP) == 3);
 }
 static void testPickClose() {
   // daily bars stamped 09:30 ET (14:30 UTC in winter): Mon 16, Tue 17, Wed 18, Thu 19, Fri 20 Nov 2026

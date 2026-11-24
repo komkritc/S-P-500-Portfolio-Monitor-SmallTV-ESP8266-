@@ -18,11 +18,12 @@ Ported from `sp500.ino` (ESP32/TFT_eSPI): same position model (`symbol, qty, buy
 
 | Area | State |
 |---|---|
-| Firmware builds, flashes, boots | **Verified on a real device** (COM3) |
+| Firmware builds, flashes, boots | **Verified on a real device** (USB serial, currently COM6) |
 | Wi-Fi join, mDNS, NTP | **Verified on device** (joined, `sp500.local` announced) |
 | Live Yahoo ^GSPC quote + 1D/5D/1M charts, TLS, memory | **Verified on device** (see *Memory*) |
-| Portfolio maths | Host-tested (723 checks) **and** the on-device NAV/P&L matches an independent calculation |
-| LCD layout | Rendered on the host with the real font renderer (47 frames, 0 overflow/overlap). **The physical LCD was not looked at** |
+| Portfolio maths | Host-tested (729 checks) **and** the on-device NAV/P&L matches an independent calculation |
+| Sale ledger (sell / undo / history / CSV, realised + lifetime P/L) | Host-tested (118 sale-engine checks) + the whole preview/confirm/undo flow driven against `tools/mock_server.py`. **Not yet exercised on hardware** |
+| LCD layout | Rendered on the host with the real font renderer (68 frames incl. the realised page, 0 overflow/overlap). **The physical LCD was not looked at** |
 | Web dashboard | Browser-tested against a mock server (desktop + 390 px mobile). **Not yet tested against the real device** (the test PC was on a different subnet) |
 | Rescue AP, captive portal, router-restart recovery, wrong password, OTA upload, settings persistence across reboot | Implemented, **not yet exercised on hardware** |
 | Long-run stability (hours), heap fragmentation trend | **Not tested** (100 s runs only) |
@@ -43,8 +44,8 @@ Requirements: PlatformIO (tested 6.2.0, `espressif8266@4.1.0` = Arduino-ESP8266 
 ```bash
 cd SP500_SmallTV
 pio run                                        # build
-pio run -t upload --upload-port COM3           # flash (USB-serial, CH340)
-python tools/serial_log.py COM3 60 --reset     # watch the boot log
+pio run -t upload --upload-port COM6           # flash (USB-serial, CH340; COM3 on the original bench)
+python tools/serial_log.py COM6 60 --reset     # watch the boot log
 ```
 
 `tools/patch_gfx_lib.py` runs automatically before the build. It stubs one unused function in the *build copy* of the GFX library to free 6.9 KB of RAM (ESP8266 keeps non-PROGMEM `const` tables in RAM). Without it the Yahoo TLS handshake leaves ~3.6 KB of heap and the chip resets.
@@ -62,9 +63,10 @@ python tools/serial_log.py COM3 60 --reset     # watch the boot log
 
 ## Using it
 
-* **LCD pages** (auto-rotating, dots show the page): 1 Portfolio (NAV, P/L THB and %, invested, positions, S&P ticker), 2 Positions (2 rows per screen, every row reachable, totals, S&P ticker), 3 Market (price, change, status, 1D -> 5D -> 1M charts, O/H/L/Prev or 1M change). The `^GSPC` ticker stays on pages 1-2.
-* **Web** `http://sp500.local`: Portfolio, Market (interactive chart, 1D/5D/1M), Details (sortable table, add/delete positions), Wi-Fi, Settings, System (diagnostics, restart, resets, OTA). The date field takes **dd/mm/yyyy** with a calendar button; the API itself uses ISO `yyyy-mm-dd`.
+* **LCD pages** (auto-rotating, dots show the page): 1 Portfolio (NAV, unrealised P/L THB and %, realised, lifetime, invested, positions, S&P ticker), 2 Positions (2 rows per screen, every row reachable, totals, S&P ticker), 3 Market (price, change, status, 1D -> 5D -> 1M charts, O/H/L/Prev or 1M change), 4 Realised P/L (all-time, this year, sales, reversed, last sale) - page 4 only appears once the ledger has a sale. The `^GSPC` ticker stays on pages 1-2.
+* **Web** `http://sp500.local`: Portfolio, Market (interactive chart, 1D/5D/1M), Details (sortable table, add/delete positions), **Sales** (realised summary, sell form with preview/confirm, transaction history with undo and CSV export), Wi-Fi, Settings, System (diagnostics, restart, resets, OTA). The date field takes **dd/mm/yyyy** with a calendar button; the API itself uses ISO `yyyy-mm-dd`.
 * **Adding a position:** symbol, purchase date, THB amount. The device fetches the close on that date (last bar *on or before* it for weekends/holidays; never a later bar) and stores `qty = THB / close`. Or enter quantity + buy price directly.
+* **Selling:** pick the symbol, date, method (FIFO oldest lot first, or one specific lot) and either a quantity, a THB amount or "entire holding". Without an execution price the device fetches the close on that date. *Preview* shows the exact lots, the cost basis and the realised P/L; only *Confirm and commit* writes. *Undo* appends a reversal - the sale stays in the history, and the position (including a fully sold lot) comes back. *Delete* removes a transaction from the history for good (a sale and its undo go together; an active sale is undone first). Export the CSV first if you want a copy.
 
 ## Data rules
 
@@ -73,10 +75,12 @@ python tools/serial_log.py COM3 60 --reset     # watch the boot log
 * A failed refresh keeps the last good value and marks it **stale** (3x the refresh interval, or a failed refresh, or loaded from flash). The LCD shows STALE; the API has `stale` flags and timestamps.
 * Quote time is converted to America/New_York with real EST/EDT rules (not the device clock/timezone). Market status uses the NYSE calendar (weekends, holidays, 13:00 early closes) and an old closing quote is never labelled OPEN.
 * After the market closes and the final close is cached, refreshes slow down (quote >= 15 min, charts >= 60 min) and resume at the next open (`/api/status` -> `data.effQuoteS`).
+* **Unrealised P/L** covers the open lots only, **Realised P/L** is the sale ledger, **Lifetime P/L** is the two added together. Each side is `N/A` while it is unknown (`realisedPl` before the ledger is read) - never a made-up `0`. A year bucket with no sales is a real `0`, not `N/A`.
+* The ledger (`/sells.jsonl`) is **append-only**: a sale appends one record, an undo appends a reversal that references it, and nothing is ever edited or deleted. A commit is journaled first (`/txn.pending`) so a power cut mid-append is completed at the next boot instead of half-applying. Capped at 2000 records (warning at 1800; the UI then asks for archiving).
 
 ## API
 
-See [docs/API.md](docs/API.md). Summary: `GET /api/status|portfolio|positions|market|chart?range=1d|5d|1mo|wifi/status|wifi/scan|settings|positions/job`, `POST /api/settings|positions|positions/delete|refresh|cache/clear|wifi/connect|wifi/reconnect|wifi/forget|system/restart|system/reset-settings|system/factory-reset`, `POST /update` (OTA). Passwords are write-only. If an admin password is set, every `POST` and `/update` need HTTP Basic auth (`admin:<password>`).
+See [docs/API.md](docs/API.md). Summary: `GET /api/status|portfolio|positions|market|chart?range=1d|5d|1mo|wifi/status|wifi/scan|settings|positions/job`, `POST /api/settings|positions|positions/delete|refresh|cache/clear|wifi/connect|wifi/reconnect|wifi/forget|system/restart|system/reset-settings|system/factory-reset`, `POST /update` (OTA). Sale endpoints: `GET /api/realised|sales|sales/export|sales/job`, `POST /api/sales/preview|sales/confirm|sales/reverse|sales/delete`. Passwords are write-only. If an admin password is set, every `POST`, `/update` **and every sale endpoint** need HTTP Basic auth (`admin:<password>`).
 
 ## OTA
 
@@ -87,11 +91,11 @@ See [docs/API.md](docs/API.md). Summary: `GET /api/status|portfolio|positions|ma
 
 | | |
 |---|---|
-| Static RAM | 48.4 KB of 80 KB (after the GFX patch; was 54.8 KB) |
-| Free heap after boot | ~28 KB |
-| During a Yahoo request | ~10 KB free, largest block 7-10 KB (the handshake itself needs ~10 KB) |
-| Guard | request refused below 14 KB largest block and aborted if < 6 KB heap remains after the handshake |
-| Flash | 696 KB of the 1,044 KB app slot |
+| Static RAM | 48.7 KB of 80 KB (59.4%, after the GFX patch) |
+| Free heap after boot | ~26.7 KB |
+| During a Yahoo request | ~6 KB free, largest block ~5.9 KB (client + 5 KB TLS buffer + handshake) |
+| Guard | request refused below 16 KB largest block and aborted if < 6 KB heap remains after the handshake |
+| Flash | 706 KB of the 1,044 KB app slot (69.2%) |
 
 Yahoo's TLS Certificate record is **4,610 bytes**, so the receive buffer is 5 KB (the reference firmware's 4 KB would fail). One request at a time; JSON is parsed as a stream straight from the socket (no body buffer). TLS **certificate validation is off** (`setInsecure`, same as the original sketch): a LAN attacker could feed false quotes. Only the TLS handshake (~1.2-1.5 s) blocks the main loop; the web server and LCD run while the body is read.
 
@@ -104,14 +108,19 @@ python tools/mock_server.py          # serves the web UI at :8080 with fake data
 python tools/gen_web_assets.py       # regenerates web/web_assets.h after editing web/index.html
 ```
 
-Host tests (723 checks): NY DST boundaries, NYSE holidays/early closes, market status, number formats, per-position and portfolio maths (positive/negative P&L, zero/invalid qty, missing/stale quotes, millis wrap), streaming JSON parser (byte-at-a-time, malformed/truncated), real recorded Yahoo responses (`tests/fixtures`), settings validation and persistence, portfolio add/delete/load (incl. the original file format), chart downsampling and axis ticks, view rotation.
+Host tests (847 checks, two suites in `tests/run_tests.py`):
+
+* `test_core.cpp` (729) - NY DST boundaries, NYSE holidays/early closes, market status, number formats, per-position and portfolio maths (positive/negative P&L, zero/invalid qty, missing/stale quotes, millis wrap), streaming JSON parser (byte-at-a-time, malformed/truncated), real recorded Yahoo responses (`tests/fixtures`), settings validation and persistence, portfolio add/delete/load (incl. the original v1 file format and lot ids), chart downsampling and axis ticks, view rotation (incl. the realised page).
+* `test_sales.cpp` (118) - allocation (FIFO across lots, specific lot, by THB, by quantity, sell-all), every validation error, the preview token (stable per state, invalidated by any lot mutation), record round-trip through the line format, apply/undo (absolute quantities, replay is a no-op, sold-out lot re-created), aggregates (count/ring/year buckets/reversals), ledger scan (bad lines, unterminated tail), recovery planning, boot recovery (cold + warm + partial tail) and the lifetime identity `lifetime = unrealised + realised` with `N/A` when either side is unknown.
 
 ## Known limitations
 
 * Unverified on hardware: web UI, Wi-Fi scan/connect from the page, rescue AP, OTA, settings persistence, reboot-offline cache, long-term heap behaviour.
+* Unverified on hardware: the whole sale flow (preview/confirm/undo), the `/sells.jsonl` ledger and its power-loss recovery, and LCD page 4 - they are host-tested and rendered, never run on the panel.
+* The ledger has no rotation yet: at 2000 records (`warn` from 1800) new sales are blocked. Export `sells.csv` and start a fresh ledger to continue.
 * ESP8266 is 2.4 GHz only. A bad Wi-Fi password is detected after ~4-20 s.
 * Yahoo's unofficial endpoint may rate-limit (HTTP 429/403): the device backs off up to 10 min and shows stale data.
-* Up to 24 positions and 8 distinct symbols. Non-US symbols work for quotes/prices, but the market-status label always describes the NYSE.
+* Up to 12 positions and 8 distinct symbols. Non-US symbols work for quotes/prices, but the market-status label always describes the NYSE.
 * No buttons on this hardware, so no manual navigation; ranges and pages rotate on a timer.
 * The admin password is sent as HTTP Basic over plain HTTP (LAN only).
 * `ui.png` could not be viewed (the image backend returned 401); the LCD design follows the wireframes in the task and the palette, not the picture.
@@ -121,11 +130,11 @@ Host tests (723 checks): NY DST boundaries, NYSE holidays/early closes, market s
 ```
 SP500_SmallTV.ino        setup()/loop(): wiring only
 src/core/                AppTypes, AppState, MarketClock (NY time/NYSE), Format, JsonWriter, FlatJson
-src/finance/             FinancialCalculator, Portfolio, YahooParser, YahooFinance (transport), MarketData (scheduler), ChartData
+src/finance/             FinancialCalculator, Portfolio (lots + meta), SaleEngine (pure sale maths, host-tested), YahooParser, YahooFinance (transport), MarketData (scheduler), ChartData
 src/config/              AppConfig (settings limits/validation)
-src/storage/             StorageManager (LittleFS, atomic writes, CRC'd cache)
-src/network/             WiFiManager, WebServerManager, OTAManager
-src/display/             DisplayManager, UiKit, Widgets, Portfolio/Positions/Market screens, ChartRenderer, ViewSchedule, font/ (reference driver + fonts)
+src/storage/             StorageManager (LittleFS, atomic writes, CRC'd cache), SaleStore (append-only ledger, journal, boot recovery, history, CSV)
+src/network/             WiFiManager, WebServerManager (incl. the sale endpoints), OTAManager
+src/display/             DisplayManager, UiKit, Widgets, Portfolio/Positions/Market/Realised screens, ChartRenderer, ViewSchedule, font/ (reference driver + fonts)
 web/                     index.html (source), web_assets.h (generated, gzip)
 tests/ tools/ docs/
 ```
