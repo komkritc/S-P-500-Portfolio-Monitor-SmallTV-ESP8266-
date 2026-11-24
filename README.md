@@ -1,4 +1,4 @@
-# S&P 500 Portfolio Monitor for GeekMagic SmallTV (ESP8266)
+# S&P 500 Portfolio Monitor for SmallTV (ESP8266)
 
 **English** | [ภาษาไทย](README.th.md)
 
