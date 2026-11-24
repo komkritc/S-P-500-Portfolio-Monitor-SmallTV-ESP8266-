@@ -429,6 +429,16 @@ static void testSettings() {
   CHECK(!applyS(s, "{\"quoteRefreshS\":3601}")); CHECK(!applyS(s, "{\"quoteRefreshS\":\"30\"}")); CHECK(!applyS(s, "{\"quoteRefreshS\":30.5}")); CHECK(!applyS(s, "{\"quoteRefreshS\":1e2}"));
   CHECK(!applyS(s, "{\"chartRefreshS\":59}")); CHECK(applyS(s, "{\"chartRefreshS\":60}")); CHECK(!applyS(s, "{\"pageRotateS\":2}")); CHECK(!applyS(s, "{\"pageRotateS\":121}"));
   CHECK(!applyS(s, "{\"localOffsetMin\":841}")); CHECK(!applyS(s, "{\"localOffsetMin\":-721}"));
+  { Settings q; settingsDefaults(q); CHECK(q.pages == 15);
+    CHECK(applyS(q, "{\"pages\":5}") && q.pages == 5); CHECK(applyS(q, "{\"pages\":15}") && q.pages == 15);
+    std::string pe; CHECK(!applyS(q, "{\"pages\":0}", &pe) && pe == "pages must be 1..15" && q.pages == 15);   // at least one page, all-or-nothing
+    CHECK(!applyS(q, "{\"pages\":16}")); CHECK(!applyS(q, "{\"pages\":-1}")); CHECK(!applyS(q, "{\"pages\":\"5\"}")); CHECK(!applyS(q, "{\"pages\":2.5}"));
+    CHECK(applyS(q, "{\"pages\":9}")); std::string po; { JsonWriter w(sinkStr, &po); settingsWrite(w, q, false, true); }
+    CHECK(po.find("\"pages\":9") != std::string::npos && po.find("\"pages\":[1,15]") != std::string::npos);
+    Settings r2; settingsDefaults(r2); std::string pf; { JsonWriter w(sinkStr, &pf); settingsWrite(w, q, true, false); }
+    CHECK(settingsLoadJson(r2, pf.data(), pf.size()) && r2.pages == 9);                                          // survives the flash round trip
+    Settings old; settingsDefaults(old); const char *legacy = "{\"quoteRefreshS\":30}";                           // a settings file from before v1.1.2 has no pages
+    CHECK(settingsLoadJson(old, legacy, strlen(legacy)) && old.pages == 15); }
   CHECK(!applyS(s, "{\"defaultRange\":\"1y\"}")); CHECK(!applyS(s, "{\"tzMode\":\"mars\"}")); CHECK(!applyS(s, "{\"tzMode\":1}"));
   CHECK(!applyS(s, "{\"hostname\":\"Bad_Host\"}")); CHECK(!applyS(s, "{\"hostname\":\"-x\"}")); CHECK(!applyS(s, "{\"hostname\":\"\"}")); CHECK(!applyS(s, "{\"hostname\":\"a1234567890123456789012x\"}"));
   CHECK(!applyS(s, "not json")); CHECK(!applyS(s, "{\"a\":")); CHECK(!applyS(s, "[1]"));
@@ -508,22 +518,41 @@ static void testTicks() {
 static void testViews() {
   using namespace display;
   View v[MAX_VIEWS]; uint8_t n;
-  n = buildViews(v, MAX_VIEWS, 1, RANGE_1D, false, true, false);
+  n = buildViews(v, MAX_VIEWS, 1, RANGE_1D, false, true, 7);
   CHECK(n == 5 && v[0].kind == V_PORTFOLIO && v[1].kind == V_POSITIONS && v[1].arg == 0 && v[2].kind == V_MARKET && v[2].arg == 0 && v[3].arg == 1 && v[4].arg == 2);
   CHECK(ROWS_PER_WINDOW == 2);
-  n = buildViews(v, MAX_VIEWS, 7, RANGE_1D, false, true, false);      // 7 rows -> 4 windows of 2: every row reachable
+  n = buildViews(v, MAX_VIEWS, 7, RANGE_1D, false, true, 7);      // 7 rows -> 4 windows of 2: every row reachable
   CHECK(n == 1 + 4 + 3 && v[1].arg == 0 && v[2].arg == 1 && v[3].arg == 2 && v[4].arg == 3 && v[4].kind == V_POSITIONS && v[5].kind == V_MARKET);
   CHECK(windowCount(0) == 1 && windowCount(2) == 1 && windowCount(3) == 2 && windowCount(MAX_POSITIONS) == 6);
-  n = buildViews(v, MAX_VIEWS, MAX_POSITIONS, RANGE_5D, true, true, false);   // max positions + AP screen still fits
+  n = buildViews(v, MAX_VIEWS, MAX_POSITIONS, RANGE_5D, true, true, 7);   // max positions + AP screen still fits
   CHECK(n == 1 + 6 + 3 + 1 && n <= MAX_VIEWS && v[7].kind == V_MARKET && v[7].arg == 1 && v[8].arg == 2 && v[9].arg == 0 && v[10].kind == V_AP);
-  n = buildViews(v, MAX_VIEWS, MAX_POSITIONS, RANGE_5D, true, true, true);    // ... and page 4 slots in before the charts
+  n = buildViews(v, MAX_VIEWS, MAX_POSITIONS, RANGE_5D, true, true, 15);    // ... and page 4 slots in before the charts
   CHECK(n == 1 + 6 + 1 + 3 + 1 && n <= MAX_VIEWS && v[7].kind == V_REALISED && v[7].arg == 0
         && v[8].kind == V_MARKET && v[8].arg == 1 && v[9].arg == 2 && v[10].arg == 0 && v[11].kind == V_AP);
-  n = buildViews(v, MAX_VIEWS, 0, RANGE_1M, false, true, true);       // default range 1M: starts there, then wraps
+  n = buildViews(v, MAX_VIEWS, 0, RANGE_1M, false, true, 15);       // default range 1M: starts there, then wraps
   CHECK(n == 6 && v[2].kind == V_REALISED && v[3].arg == 2 && v[4].arg == 0 && v[5].arg == 1);
-  n = buildViews(v, MAX_VIEWS, 5, RANGE_1D, false, false, false);     // no saved Wi-Fi: AP screen only
+  n = buildViews(v, MAX_VIEWS, 5, RANGE_1D, false, false, 7);     // no saved Wi-Fi: AP screen only
   CHECK(n == 1 && v[0].kind == V_AP);
-  n = buildViews(v, 3, MAX_POSITIONS, RANGE_1D, true, true, true); CHECK(n == 3);   // never overruns the caller's array
+  n = buildViews(v, 3, MAX_POSITIONS, RANGE_1D, true, true, 15); CHECK(n == 3);   // never overruns the caller's array
+  // ---- which LCD pages rotate (Settings::pages: 1 Portfolio, 2 Positions, 4 Market, 8 Realised)
+  n = buildViews(v, MAX_VIEWS, 3, RANGE_1D, false, true, 1 | 4);                // [x]1 [ ]2 [x]3 [ ]4
+  CHECK(n == 1 + 3 && v[0].kind == V_PORTFOLIO && v[1].kind == V_MARKET && v[1].arg == 0 && v[2].arg == 1 && v[3].arg == 2);
+  n = buildViews(v, MAX_VIEWS, 7, RANGE_1D, false, true, 2);                    // positions only: every 2-row window stays
+  CHECK(n == 4 && v[0].kind == V_POSITIONS && v[3].kind == V_POSITIONS && v[3].arg == 3);
+  n = buildViews(v, MAX_VIEWS, 7, RANGE_1D, false, true, 8);                    // realised only
+  CHECK(n == 1 && v[0].kind == V_REALISED);
+  n = buildViews(v, MAX_VIEWS, 7, RANGE_5D, false, true, 4);                    // market only, starting at the default range
+  CHECK(n == 3 && v[0].kind == V_MARKET && v[0].arg == 1 && v[1].arg == 2 && v[2].arg == 0);
+  n = buildViews(v, MAX_VIEWS, 2, RANGE_1D, false, true, 0);                    // empty mask = all pages, never an empty rotation
+  CHECK(n == 1 + 1 + 1 + 3 && v[0].kind == V_PORTFOLIO);
+  n = buildViews(v, MAX_VIEWS, 2, RANGE_1D, false, true, 16);                   // bits above the four pages are ignored -> all
+  CHECK(n == 1 + 1 + 1 + 3);
+  n = buildViews(v, MAX_VIEWS, 2, RANGE_1D, true, true, 8);                     // the Wi-Fi AP screen is never filtered out
+  CHECK(n == 2 && v[0].kind == V_REALISED && v[1].kind == V_AP);
+  n = buildViews(v, MAX_VIEWS, 2, RANGE_1D, false, false, 8);                   // setup AP only: the mask does not apply
+  CHECK(n == 1 && v[0].kind == V_AP);
+  CHECK(pageDotCount(15) == 4 && pageDotCount(5) == 2 && pageDotCount(8) == 1 && pageDotCount(0) == 1);
+  CHECK(pageDotIndex(5, 0) == 0 && pageDotIndex(5, 2) == 1 && pageDotIndex(15, 3) == 3 && pageDotIndex(10, 1) == 0 && pageDotIndex(10, 3) == 1);
   CHECK(nextIndex(4, 5) == 0 && nextIndex(0, 5) == 1 && nextIndex(0, 0) == 0);
   CHECK(pageOf(V_PORTFOLIO) == 0 && pageOf(V_POSITIONS) == 1 && pageOf(V_MARKET) == 2 && pageOf(V_REALISED) == 3 && pageOf(V_AP) == 3);
 }

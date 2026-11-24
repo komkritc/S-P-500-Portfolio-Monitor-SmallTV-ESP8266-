@@ -153,8 +153,8 @@ def pos_view():
 
 
 LIMITS = {"portfolioRefreshS": [15, 3600], "quoteRefreshS": [15, 3600], "chartRefreshS": [60, 3600],
-          "pageRotateS": [3, 120], "localOffsetMin": [-720, 840]}
-SETTINGS = {"portfolioRefreshS": 60, "quoteRefreshS": 60, "chartRefreshS": 300, "pageRotateS": 8,
+          "pageRotateS": [3, 120], "localOffsetMin": [-720, 840], "pages": [1, 15]}
+SETTINGS = {"portfolioRefreshS": 60, "quoteRefreshS": 60, "chartRefreshS": 300, "pageRotateS": 8, "pages": 15,
             "defaultRange": "1d", "tzMode": "exchange", "localOffsetMin": 420, "hostname": "sp500"}
 ADMIN = {"pass": ""}
 
@@ -174,6 +174,10 @@ def apply_settings(b):
             if not isinstance(v, int) or isinstance(v, bool) or v < lo or v > hi:
                 raise ValueError("%s must be %d..%d" % (k, lo, hi))
             new[k] = v
+    if "pages" in b:
+        if isinstance(b["pages"], bool) or not isinstance(b["pages"], int) or not 1 <= b["pages"] <= 15:
+            raise ValueError("pages must be 1..15")
+        new["pages"] = b["pages"]
     if "defaultRange" in b:
         if b["defaultRange"] not in ("1d", "5d", "1mo"):
             raise ValueError("defaultRange must be 1d, 5d or 1mo")

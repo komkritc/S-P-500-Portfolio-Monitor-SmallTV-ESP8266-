@@ -60,7 +60,7 @@ static void setPrice(AppState &a, const char *sym, double px, uint32_t nowMs) {
   q->valid = true; q->price = px; q->marketTime = 1795210554; q->okMs = nowMs; q->okEpoch = 1795210560; q->failed = false; q->fromCache = false;
 }
 
-enum Scn { S_NORMAL, S_LOSS, S_MANY, S_MISSING, S_STALE, S_EMPTY, S_NODATA, S_BIG, S_REALISED, S_REALBIG };
+enum Scn { S_NORMAL, S_LOSS, S_MANY, S_MISSING, S_STALE, S_EMPTY, S_NODATA, S_BIG, S_REALISED, S_REALBIG, S_NOSALES };
 
 // A synthetic ledger line (the engine is the same one the device runs on /sells.jsonl).
 static void addSale(AppState &a, const char *id, const char *date, double realised) {
@@ -90,6 +90,9 @@ static void build(AppState &a, Scn s, uint32_t epoch) {
   else if (s == S_MANY) {
     addPos(a, "^GSPC", "2025-11-20", 39.17, 6382.10); addPos(a, "^GSPC", "2026-01-05", 12.5, 7010.5); addPos(a, "^GSPC", "2026-02-02", 3.25, 7300);
     addPos(a, "^GSPC", "2026-03-02", 1.1, 6100); addPos(a, "^GSPC", "2026-04-01", 100.123456, 6900); addPos(a, "^GSPC", "2026-05-01", 0.5, 7800); addPos(a, "^GSPC", "2026-06-01", 2, 6500);
+  } else if (s == S_NOSALES) {
+    addPos(a, "^GSPC", "2025-11-20", 39.17, 6382.10);
+    sale::summaryReset(a.realised);                    // readable ledger, no sale: a known 0, not N/A
   } else if (s == S_REALISED) {
     addPos(a, "^GSPC", "2025-11-20", 39.17, 6382.10); addPos(a, "^GSPC", "2026-01-05", 12.5, 7010.5); addPos(a, "^GSPC", "2026-02-02", 3.25, 6200);
     sale::summaryReset(a.realised);
@@ -150,12 +153,20 @@ int main(int argc, char **argv) {
   g_dir = argc > 1 ? argv[1] : ".";
   U.begin(&G);
   static AppState a;
-  struct { Scn s; const char *n; } scn[] = {{S_NORMAL, "normal"}, {S_LOSS, "loss"}, {S_MANY, "many"}, {S_MISSING, "missing"}, {S_STALE, "stale"}, {S_EMPTY, "empty"}, {S_NODATA, "nodata"}, {S_BIG, "bignum"}, {S_REALISED, "realised"}, {S_REALBIG, "realbig"}};
+  struct { Scn s; const char *n; } scn[] = {{S_NORMAL, "normal"}, {S_LOSS, "loss"}, {S_MANY, "many"}, {S_MISSING, "missing"}, {S_STALE, "stale"}, {S_EMPTY, "empty"}, {S_NODATA, "nodata"}, {S_BIG, "bignum"}, {S_REALISED, "realised"}, {S_REALBIG, "realbig"}, {S_NOSALES, "nosales"}};
   for (auto &sc : scn) {
     build(a, sc.s, NOW_CLOSED);
     char n[64];
     fresh(); display::drawPortfolio(U, a, true); snprintf(n, sizeof n, "%s_p1_portfolio", sc.n); dump(n);
     for (uint8_t w = 0; w < display::windowCount(a.posCount); w++) { fresh(); display::drawPositions(U, a, w, true); snprintf(n, sizeof n, "%s_p2_positions_w%u", sc.n, w); dump(n); }
+    if (sc.s == S_NORMAL) {                                  // header dots follow the enabled pages (Settings::pages)
+      a.settings.pages = 1 | 4;                              // [x]1 [ ]2 [x]3 [ ]4 -> two dots
+      fresh(); display::drawPortfolio(U, a, true); dump("pages13_p1_portfolio");
+      fresh(); display::drawMarket(U, a, 0, true, true); dump("pages13_p3_market_1D");
+      a.settings.pages = 8;                                  // realised only -> one dot
+      fresh(); display::drawRealised(U, a, true); dump("pages4_p4_realised");
+      a.settings.pages = 15;
+    }
     fresh(); display::drawRealised(U, a, true); snprintf(n, sizeof n, "%s_p4_realised", sc.n); dump(n);      // page 4 (also the "no sales yet" branch)
     for (uint8_t r = 0; r < 3; r++) {
       fresh(); display::ChartParams cp = {r, 0, 0, a.chartStale[r]}; (void)cp;

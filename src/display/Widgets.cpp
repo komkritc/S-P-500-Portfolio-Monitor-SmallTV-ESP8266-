@@ -1,6 +1,7 @@
 #include "Widgets.h"
 #include "../core/Format.h"
 #include "../core/MarketClock.h"
+#include "ViewSchedule.h"
 #include <Arduino_GFX_Library.h>
 #include <stdio.h>
 #include <string.h>
@@ -36,7 +37,12 @@ void drawHeader(Ui &u, const AppState &a, const char *title, uint8_t page, bool 
     else { u.eraseSlot(SLOT_AP); wifiIcon(g, 216, 5, bars < 0 ? 0 : bars, bars >= 3 ? C_POS : C_WARN, C_LINE, bars < 0); }
     s_lastBars = bars; s_lastAp = ap;
   }
-  if (full || page != s_lastDots) { g->fillRect(150, 6, 60, 12, C_BG); pageDots(g, 180, 12, page == 3 ? 4 : 3, page); s_lastDots = page; }
+  const int dotKey = page | (a.settings.pages << 4);                    // redraw when the page OR the enabled set changes
+  if (full || dotKey != s_lastDots) {
+    g->fillRect(150, 6, 60, 12, C_BG);
+    pageDots(g, 180, 12, pageDotCount(a.settings.pages), pageDotIndex(a.settings.pages, page));
+    s_lastDots = dotKey;
+  }
 }
 
 void drawTicker(Ui &u, const AppState &a, int y0, bool full) {

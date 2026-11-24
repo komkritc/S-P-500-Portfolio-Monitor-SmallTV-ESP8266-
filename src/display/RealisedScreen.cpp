@@ -38,14 +38,15 @@ void drawRealised(Ui &u, const AppState &a, bool full) {
 
   // ---- all-time realised P/L
   u.text(1, "ALL-TIME REALISED P/L", 1, 8, 28, A_LEFT, C_MUTED);
-  if (!s.valid || s.count == 0) {                       // no readable sale: never a made-up 0
+  if (!s.valid) {                                       // the ledger could not be read: N/A, never a made-up 0
     u.eraseSlot(2);
-    u.text(2, s.valid ? "no sales yet" : "ledger unreadable", 2, 8, 46, A_LEFT, C_MUTED);
+    u.text(2, "ledger unreadable", 2, 8, 46, A_LEFT, C_MUTED);
     u.eraseSlot(3); u.eraseSlot(4); u.eraseSlot(5); u.eraseSlot(6);
     u.eraseSlot(7); u.eraseSlot(8); u.eraseSlot(9);
     u.eraseSlot(17); u.eraseSlot(18); u.eraseSlot(19);
     return;
   }
+  // A readable ledger with no sales is a known 0 (shown as such), not N/A.
   fmtThbSigned(b, sizeof b, s.pl);
   static const uint8_t bigSz[] = {3, 2, 1};
   u.fit(2, b, bigSz, 3, 224, 8, 43, A_LEFT, signColor(s.pl));
@@ -79,6 +80,11 @@ void drawRealised(Ui &u, const AppState &a, bool full) {
   char lab[40];
   snprintf(lab, sizeof lab, "LAST SALE %s", s.hasLast ? s.lastId : "");
   u.text(17, lab, 1, 8, 175, A_LEFT, C_MUTED);
+  if (!s.hasLast) {                                     // no sale stands (none yet, or all were undone)
+    u.eraseSlot(18); u.eraseSlot(9);
+    u.text(19, "no sales yet", 2, 8, 191, A_LEFT, C_MUTED);
+    return;
+  }
   dateText(b, sizeof b, s.lastDate);
   u.text(18, b, 1, 232, 175, A_RIGHT, C_MUTED);
   static const uint8_t symSz[] = {2, 1}, valSz[] = {2, 1};

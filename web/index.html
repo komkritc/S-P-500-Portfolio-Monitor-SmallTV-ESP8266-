@@ -81,6 +81,7 @@ input[type=checkbox]{display:inline-block;width:auto;margin:0 6px 0 0;vertical-a
 .ok{color:var(--up)}
 .hl{font-size:13px;color:var(--soft);line-height:1.55}
 .hl code{color:var(--acc)}
+.pg{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;margin:2px 0 4px}.pg .l2{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;width:100%}.pg label{display:inline-flex;align-items:center;font-size:13px;color:var(--fg);text-transform:none;letter-spacing:0;cursor:pointer}
 .row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
 .row>div{flex:1;min-width:140px}
 .net{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--panel);border:0;border-bottom:1px solid var(--line2);color:var(--fg);padding:9px 6px;font:inherit;cursor:pointer}
@@ -228,6 +229,7 @@ If the device cannot join your Wi-Fi (or has no saved network) it starts its own
 <label>Quote refresh (s)<input id="s-quoteRefreshS" type="number"></label>
 <label>Chart refresh (s)<input id="s-chartRefreshS" type="number"></label>
 <label>Page rotate (s)<input id="s-pageRotateS" type="number"></label>
+<div class="pg"><span class="l2">LCD pages to show</span><label><input type="checkbox" class="pgc" data-b="1"> 1 Portfolio</label><label><input type="checkbox" class="pgc" data-b="2"> 2 Positions</label><label><input type="checkbox" class="pgc" data-b="4"> 3 Market</label><label><input type="checkbox" class="pgc" data-b="8"> 4 Realised P/L</label></div>
 <label>Default chart range<select id="s-defaultRange"><option value="1d">1D</option><option value="5d">5D</option><option value="1mo">1M</option></select></label>
 <label>Time zone<select id="s-tzMode"><option value="exchange">Exchange (America/New_York)</option><option value="local">Local (fixed UTC offset)</option></select></label>
 <label id="s-off">UTC offset (minutes)<input id="s-localOffsetMin" type="number"></label>
@@ -604,7 +606,7 @@ $('w-fg').onclick=function(){if(!typed('FORGET','Forget the saved Wi-Fi network?
 const NK=['portfolioRefreshS','quoteRefreshS','chartRefreshS','pageRotateS','localOffsetMin'];
 function fS(s){
 NK.forEach(k=>{const i=$('s-'+k);i.value=s[k];if(s.limits&&s.limits[k]){i.min=s.limits[k][0];i.max=s.limits[k][1];i.title='Allowed: '+s.limits[k][0]+'..'+s.limits[k][1]}});
-$('s-defaultRange').value=s.defaultRange;$('s-tzMode').value=s.tzMode;$('s-hostname').value=s.hostname;
+document.querySelectorAll('.pgc').forEach(c=>c.checked=!!((s.pages==null?15:s.pages)&+c.dataset.b));$('s-defaultRange').value=s.defaultRange;$('s-tzMode').value=s.tzMode;$('s-hostname').value=s.hostname;
 $('s-adminPass').value='';$('s-clr').checked=false;$('s-aps').textContent=s.adminPassSet?'An admin password is set.':'No admin password set (open access).';tzv()}
 const tzv=()=>{$('s-off').style.display=$('s-tzMode').value=='local'?'':'none'};
 $('s-tzMode').onchange=tzv;
@@ -614,7 +616,7 @@ const er=$('s-err'),b={},L=(S&&S.limits)||{};er.textContent='';er.className='er'
 document.querySelectorAll('#sf input').forEach(i=>i.classList.remove('bad'));
 for(const k of NK){if(k=='localOffsetMin'&&$('s-tzMode').value!='local')continue;const i=$('s-'+k),v=i.value.trim(),l=L[k]||[-1e9,1e9];
 if(!/^-?\d+$/.test(v)||+v<l[0]||+v>l[1]){i.classList.add('bad');i.focus();return er.textContent=k+' must be an integer '+l[0]+'..'+l[1]}b[k]=+v}
-b.defaultRange=$('s-defaultRange').value;b.tzMode=$('s-tzMode').value;
+let pg=0;document.querySelectorAll('.pgc').forEach(c=>{if(c.checked)pg|=+c.dataset.b});if(!pg)return er.textContent='Tick at least one LCD page';b.pages=pg;b.defaultRange=$('s-defaultRange').value;b.tzMode=$('s-tzMode').value;
 const hn=$('s-hostname').value.trim();
 if(!/^[A-Za-z0-9]([A-Za-z0-9-]{0,29}[A-Za-z0-9])?$/.test(hn)){$('s-hostname').classList.add('bad');return er.textContent='hostname: 1..31 letters, digits or hyphens (not at the ends)'}
 b.hostname=hn;const ap=$('s-adminPass').value;
