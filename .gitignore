@@ -1,4 +1,8 @@
 .pio/
-tests/test_core.exe
+.vscode/
+__pycache__/
+*.pyc
 tests/test_core
-*.bin
+tests/test_sales
+tests/*.exe
+tests/preview/out/

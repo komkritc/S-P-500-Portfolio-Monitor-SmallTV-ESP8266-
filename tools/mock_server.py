@@ -94,7 +94,7 @@ def market():
         text = time.strftime("%b %d, %H:%M", time.gmtime(q + o * 60)) + " UTC%+d:%02d" % (o // 60 if o >= 0 else -(-o // 60), abs(o) % 60)
     return {"symbol": "^GSPC", "valid": True, "stale": SCENARIO == "stale", "last": LAST, "prevClose": PREV,
             "change": round(LAST - PREV, 2), "changePct": round((LAST - PREV) / PREV * 100, 2),
-            "open": 7150.39, "high": META["regularMarketDayHigh"], "low": META["regularMarketDayLow"],
+            "open": 7150.39, "high": M1D["regularMarketDayHigh"], "low": M1D["regularMarketDayLow"],
             "status": "CLOSED", "sessionDate": time.strftime("%Y-%m-%d", time.gmtime(q - 18000)),
             "quoteTime": q, "quoteTimeText": text, "timezone": "EST", "tzName": "America/New_York",
             "fetchedEpoch": now() - (900 if SCENARIO == "stale" else 6)}

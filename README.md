@@ -1,6 +1,35 @@
 # S&P 500 Portfolio Monitor for GeekMagic SmallTV (ESP8266)
 
-Portfolio-first dashboard on the SmallTV's 240x240 LCD, plus a full web dashboard, both fed by **one** shared state and **one** calculation engine.
+A pocket **S&P 500 / portfolio tracker** for the GeekMagic SmallTV (ESP-12F, 240x240 LCD). It shows your portfolio value and profit/loss on the little screen and serves a full web dashboard (dark and light theme) from the same device. Quotes and charts come from Yahoo Finance; positions and the sale ledger are stored in the device's own flash. No cloud account, no server.
+
+![LCD pages: portfolio, positions, market chart, realised P/L](docs/img/lcd-pages.png)
+
+*The four LCD pages that rotate automatically. Rendered on the host with the real firmware font renderer from sample data; the physical panel was not photographed.*
+
+## Screenshots
+
+| Portfolio (dark) | Portfolio (light) |
+|---|---|
+| ![Portfolio, dark theme](docs/img/web-portfolio-dark.png) | ![Portfolio, light theme](docs/img/web-portfolio-light.png) |
+
+| Market chart (1D / 5D / 1M) | Sales: sell form and transaction history |
+|---|---|
+| ![Market chart](docs/img/web-market-dark.png) | ![Sales tab](docs/img/web-sales-dark.png) |
+
+<p align="center"><img src="docs/img/web-mobile-dark.png" alt="Web dashboard on a phone" width="260"></p>
+
+*Web screenshots are taken against `tools/mock_server.py` with sample data, so numbers are illustrative.*
+
+## Features
+
+* **Portfolio-first LCD:** NAV, unrealised / realised / lifetime P/L in THB, invested capital, per-position rows, and a live `^GSPC` ticker. Pages and chart ranges rotate on a timer (the SmallTV has no buttons).
+* **Web dashboard** at `http://sp500.local`: portfolio, interactive 1D / 5D / 1M chart, sortable position table, add and delete positions, Wi-Fi setup, settings, diagnostics, firmware upload. Dark / light theme that follows your OS.
+* **Sale ledger:** sell with FIFO or a specific lot, preview before committing, undo (a reversal record), delete a transaction, CSV export. Append-only with power-loss recovery.
+* **Honest numbers:** unknown data is `N/A`, never `0`; a failed refresh keeps the last value and marks it STALE; market status follows the NYSE calendar and New York DST.
+* **Self-contained setup:** first boot opens a setup access point with a captive portal; a WPA2 rescue AP appears if the saved network is lost for 3 minutes.
+* **OTA updates** from the web page or `pio run -t upload --upload-port <ip>`.
+
+## How it works
 
 ```
 Yahoo Finance -> MarketData (scheduler) -> AppState (raw inputs)
@@ -15,6 +44,9 @@ Yahoo Finance -> MarketData (scheduler) -> AppState (raw inputs)
 Ported from `sp500.ino` (ESP32/TFT_eSPI): same position model (`symbol, qty, buy, date`), same `/portfolio.json` format, same Yahoo `v8/finance/chart` source, same "buy date + THB amount -> buy price = that day's close, qty = THB / price" input convention. Wi-Fi/AP/OTA patterns come from `esp8266_macui.ino`; the display driver and Inter font renderer are copied from it (`src/display/font/`).
 
 ## Status - read this first
+
+Firmware **v1.1.1**. Hardware-verified items are marked below; everything else is host-tested only.
+
 
 | Area | State |
 |---|---|
@@ -94,7 +126,7 @@ See [docs/API.md](docs/API.md). Summary: `GET /api/status|portfolio|positions|ma
 | Static RAM | 48.7 KB of 80 KB (59.4%, after the GFX patch) |
 | Free heap after boot | ~26.7 KB |
 | During a Yahoo request | ~6 KB free, largest block ~5.9 KB (client + 5 KB TLS buffer + handshake) |
-| Guard | request refused below 16 KB largest block and aborted if < 6 KB heap remains after the handshake |
+| Guard | request refused below 9 KB largest block and aborted if < 4.5 KB heap remains after the handshake (v1.1.1; was 16 KB / 6 KB, lowered so the 5D/1M charts and the sale-price lookup can run - checked for minutes, not soak-tested) |
 | Flash | 706 KB of the 1,044 KB app slot (69.2%) |
 
 Yahoo's TLS Certificate record is **4,610 bytes**, so the receive buffer is 5 KB (the reference firmware's 4 KB would fail). One request at a time; JSON is parsed as a stream straight from the socket (no body buffer). TLS **certificate validation is off** (`setInsecure`, same as the original sketch): a LAN attacker could feed false quotes. Only the TLS handshake (~1.2-1.5 s) blocks the main loop; the web server and LCD run while the body is read.
@@ -123,7 +155,6 @@ Host tests (847 checks, two suites in `tests/run_tests.py`):
 * Up to 12 positions and 8 distinct symbols. Non-US symbols work for quotes/prices, but the market-status label always describes the NYSE.
 * No buttons on this hardware, so no manual navigation; ranges and pages rotate on a timer.
 * The admin password is sent as HTTP Basic over plain HTTP (LAN only).
-* `ui.png` could not be viewed (the image backend returned 401); the LCD design follows the wireframes in the task and the palette, not the picture.
 
 ## Project layout
 
