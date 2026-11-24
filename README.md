@@ -24,7 +24,7 @@ A pocket **S&P 500 / portfolio tracker** for the GeekMagic SmallTV (ESP-12F, 240
 
 ## Features
 
-* **Portfolio-first LCD:** NAV, unrealised / realised / lifetime P/L in THB, invested capital, per-position rows, and a live `^GSPC` ticker. Pages and chart ranges rotate on a timer (the SmallTV has no buttons).
+* **Portfolio-first LCD:** NAV, unrealised P/L in THB and %, invested capital, per-position rows, a live `^GSPC` ticker, and a separate Realised P/L page (all-time and this year). The web dashboard also shows lifetime P/L. Pages and chart ranges rotate on a timer (the SmallTV has no buttons).
 * **Web dashboard** at `http://sp500.local`: portfolio, interactive 1D / 5D / 1M chart, sortable position table, add and delete positions, Wi-Fi setup, settings, diagnostics, firmware upload. Dark / light theme that follows your OS.
 * **Sale ledger:** sell with FIFO or a specific lot, preview before committing, undo (a reversal record), delete a transaction, CSV export. Append-only with power-loss recovery.
 * **Honest numbers:** unknown data is `N/A`, never `0`; a failed refresh keeps the last value and marks it STALE; market status follows the NYSE calendar and New York DST.
@@ -98,7 +98,7 @@ python tools/serial_log.py COM6 60 --reset     # watch the boot log
 
 ## Using it
 
-* **LCD pages** (auto-rotating, dots show the page): 1 Portfolio (NAV, unrealised P/L THB and %, realised, lifetime, invested, positions, S&P ticker), 2 Positions (2 rows per screen, every row reachable, totals, S&P ticker), 3 Market (price, change, status, 1D -> 5D -> 1M charts, O/H/L/Prev or 1M change), 4 Realised P/L (all-time, this year, sales, reversed, last sale) - page 4 is always in the rotation (it shows 0.00 and "no sales yet" until the first sale). The `^GSPC` ticker stays on pages 1-2.
+* **LCD pages** (auto-rotating, dots show the page): 1 Portfolio (NAV, unrealised P/L THB and %, invested, positions, S&P ticker; realised and lifetime P/L are not on this page), 2 Positions (2 rows per screen, every row reachable, totals, S&P ticker), 3 Market (price, change, status, 1D -> 5D -> 1M charts, O/H/L/Prev or 1M change), 4 Realised P/L (all-time, this year, sales, reversed, last sale) - page 4 is always in the rotation (it shows 0.00 and "no sales yet" until the first sale). The `^GSPC` ticker stays on pages 1-2.
 * **Choosing LCD pages:** Settings tab -> *LCD pages to show* (1 Portfolio, 2 Positions, 3 Market, 4 Realised P/L). The rotation and the header dots follow your choice at once, no reboot. At least one page must stay ticked; the Wi-Fi setup screen is always available. *Market page charts* (1D / 5D / 1M) picks which chart ranges page 3 cycles through; it changes only the LCD, the web chart still offers all three.
 * **Web** `http://sp500.local`: Portfolio, Market (interactive chart, 1D/5D/1M), Details (sortable table, add/delete positions), **Sales** (realised summary with all-time and this-year totals, sell form with preview/confirm, transaction history with undo and CSV export), Wi-Fi, Settings, System (diagnostics, restart, resets, OTA). The date field takes **dd/mm/yyyy** with a calendar button; the API itself uses ISO `yyyy-mm-dd`.
 * **Adding a position:** symbol, purchase date, THB amount. The device fetches the close on that date (last bar *on or before* it for weekends/holidays; never a later bar) and stores `qty = THB / close`. Or enter quantity + buy price directly.
