@@ -47,7 +47,7 @@ Ported from `sp500.ino` (ESP32/TFT_eSPI): same position model (`symbol, qty, buy
 
 ## Status - read this first
 
-Firmware **v1.1.1**. Hardware-verified items are marked below; everything else is host-tested only.
+Firmware **v1.1.2**. Hardware-verified items are marked below; everything else is host-tested only.
 
 
 | Area | State |
