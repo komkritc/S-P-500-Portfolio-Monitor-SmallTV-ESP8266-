@@ -1,5 +1,7 @@
 # S&P 500 Portfolio Monitor for GeekMagic SmallTV (ESP8266)
 
+**English** | [ภาษาไทย](README.th.md)
+
 A pocket **S&P 500 / portfolio tracker** for the GeekMagic SmallTV (ESP-12F, 240x240 LCD). It shows your portfolio value and profit/loss on the little screen and serves a full web dashboard (dark and light theme) from the same device. Quotes and charts come from Yahoo Finance; positions and the sale ledger are stored in the device's own flash. No cloud account, no server.
 
 ![LCD pages: portfolio, positions, market chart, realised P/L](docs/img/lcd-pages.png)
@@ -54,11 +56,12 @@ Firmware **v1.1.1**. Hardware-verified items are marked below; everything else i
 | Wi-Fi join, mDNS, NTP | **Verified on device** (joined, `sp500.local` announced) |
 | Live Yahoo ^GSPC quote + 1D/5D/1M charts, TLS, memory | **Verified on device** (see *Memory*) |
 | Portfolio maths | Host-tested (729 checks) **and** the on-device NAV/P&L matches an independent calculation |
-| Sale ledger (sell / undo / history / CSV, realised + lifetime P/L) | Host-tested (118 sale-engine checks) + the whole preview/confirm/undo flow driven against `tools/mock_server.py`. **Not yet exercised on hardware** |
+| Sale ledger (sell / undo / delete / history / CSV, realised + lifetime P/L) | Host-tested (128 sale-engine checks). **Verified on device (v1.1.1):** preview, confirm (manual and Yahoo-close price), undo, delete, history and CSV, with no reset. Power-loss recovery of the ledger is **not** exercised on hardware |
 | LCD layout | Rendered on the host with the real font renderer (68 frames incl. the realised page, 0 overflow/overlap). **The physical LCD was not looked at** |
-| Web dashboard | Browser-tested against a mock server (desktop + 390 px mobile). **Not yet tested against the real device** (the test PC was on a different subnet) |
-| Rescue AP, captive portal, router-restart recovery, wrong password, OTA upload, settings persistence across reboot | Implemented, **not yet exercised on hardware** |
-| Long-run stability (hours), heap fragmentation trend | **Not tested** (100 s runs only) |
+| Web dashboard | Browser-tested against a mock server (desktop + 390 px mobile) **and** opened from the real device (portfolio, sales, theme toggle, sell flow) |
+| OTA upload | **Verified on device** (repeated flashes with `pio run -t upload --upload-port <ip>`) |
+| Rescue AP, captive portal, router-restart recovery, wrong password, settings persistence across reboot | Implemented, **not yet exercised on hardware** |
+| Long-run stability (hours), heap fragmentation trend | **Not tested** (minutes only). The heap is tight: see *Memory* |
 
 ## Hardware
 
@@ -140,15 +143,15 @@ python tools/mock_server.py          # serves the web UI at :8080 with fake data
 python tools/gen_web_assets.py       # regenerates web/web_assets.h after editing web/index.html
 ```
 
-Host tests (847 checks, two suites in `tests/run_tests.py`):
+Host tests (857 checks, two suites in `tests/run_tests.py`):
 
 * `test_core.cpp` (729) - NY DST boundaries, NYSE holidays/early closes, market status, number formats, per-position and portfolio maths (positive/negative P&L, zero/invalid qty, missing/stale quotes, millis wrap), streaming JSON parser (byte-at-a-time, malformed/truncated), real recorded Yahoo responses (`tests/fixtures`), settings validation and persistence, portfolio add/delete/load (incl. the original v1 file format and lot ids), chart downsampling and axis ticks, view rotation (incl. the realised page).
-* `test_sales.cpp` (118) - allocation (FIFO across lots, specific lot, by THB, by quantity, sell-all), every validation error, the preview token (stable per state, invalidated by any lot mutation), record round-trip through the line format, apply/undo (absolute quantities, replay is a no-op, sold-out lot re-created), aggregates (count/ring/year buckets/reversals), ledger scan (bad lines, unterminated tail), recovery planning, boot recovery (cold + warm + partial tail) and the lifetime identity `lifetime = unrealised + realised` with `N/A` when either side is unknown.
+* `test_sales.cpp` (128) - allocation (FIFO across lots, specific lot, by THB, by quantity, sell-all), every validation error, the preview token (stable per state, invalidated by any lot mutation), record round-trip through the line format, apply/undo (absolute quantities, replay is a no-op, sold-out lot re-created), aggregates (count/ring/year buckets/reversals), ledger scan (bad lines, unterminated tail), recovery planning, boot recovery (cold + warm + partial tail) and the lifetime identity `lifetime = unrealised + realised` with `N/A` when either side is unknown.
 
 ## Known limitations
 
-* Unverified on hardware: web UI, Wi-Fi scan/connect from the page, rescue AP, OTA, settings persistence, reboot-offline cache, long-term heap behaviour.
-* Unverified on hardware: the whole sale flow (preview/confirm/undo), the `/sells.jsonl` ledger and its power-loss recovery, and LCD page 4 - they are host-tested and rendered, never run on the panel.
+* Unverified on hardware: Wi-Fi scan/connect from the page, rescue AP, settings persistence, reboot-offline cache, long-term heap behaviour, the ledger's power-loss recovery, and the look of the physical LCD (pages are host-rendered).
+* Memory is tight: the free heap is ~21 KB at idle and fragments, so a Yahoo request is allowed with a 9 KB largest block. If a chart or the sale-price lookup fails with `low memory`, enter the sale price by hand and retry later.
 * The ledger has no rotation yet: at 2000 records (`warn` from 1800) new sales are blocked. Export `sells.csv` and start a fresh ledger to continue.
 * ESP8266 is 2.4 GHz only. A bad Wi-Fi password is detected after ~4-20 s.
 * Yahoo's unofficial endpoint may rate-limit (HTTP 429/403): the device backs off up to 10 min and shows stale data.
