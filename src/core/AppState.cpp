@@ -10,6 +10,7 @@ void settingsDefaults(Settings &s) {
   s.chartRefreshS = 300;
   s.pageRotateS = 8;
   s.defaultRange = RANGE_1D;
+  s.charts = 7;                 // 1D, 5D and 1M
   s.pages = 15;                 // all four pages
   s.tzMode = 0;
   s.localOffsetMin = 420;       // UTC+7 (the original sketch's GMT_OFFSET_SEC = 7 h)

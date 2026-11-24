@@ -24,7 +24,7 @@ static bool s_otaMode = false;
 static int s_otaPct = -1;
 static uint8_t s_lastPos = 255, s_lastDefault = 255;
 static bool s_lastAp = false, s_lastDash = true;
-static uint8_t s_lastPages = 0;
+static uint8_t s_lastPages = 0, s_lastCharts = 0;
 static ViewKind s_shownKind = V_PORTFOLIO;
 static uint8_t s_shownArg = 255;
 
@@ -132,9 +132,9 @@ void otaResult(bool ok, const char *msg) {
 static void rebuildViews(const AppState &a) {
   bool ap = a.net.mode == NetInfo::NET_AP_SETUP || a.net.mode == NetInfo::NET_AP_RESCUE;
   bool dash = a.net.mode != NetInfo::NET_AP_SETUP;
-  const uint8_t pages = a.settings.pages;                        // which LCD pages rotate (web Settings)
-  s_nViews = buildViews(s_views, MAX_VIEWS, a.posCount, a.settings.defaultRange, ap, dash, pages);
-  s_lastPos = a.posCount; s_lastDefault = a.settings.defaultRange; s_lastAp = ap; s_lastDash = dash; s_lastPages = pages;
+  const uint8_t pages = a.settings.pages, charts = a.settings.charts;   // which LCD pages / chart ranges rotate (web Settings)
+  s_nViews = buildViews(s_views, MAX_VIEWS, a.posCount, a.settings.defaultRange, ap, dash, pages, charts);
+  s_lastPos = a.posCount; s_lastDefault = a.settings.defaultRange; s_lastAp = ap; s_lastDash = dash; s_lastPages = pages; s_lastCharts = charts;
   // keep showing the same view when the list changes
   uint8_t keep = 0;
   for (uint8_t i = 0; i < s_nViews; i++) if (s_views[i].kind == s_shownKind && s_views[i].arg == s_shownArg) { keep = i; break; }
@@ -147,9 +147,9 @@ void loop(const AppState &a) {
 
   bool ap = a.net.mode == NetInfo::NET_AP_SETUP || a.net.mode == NetInfo::NET_AP_RESCUE;
   bool dash = a.net.mode != NetInfo::NET_AP_SETUP;
-  const uint8_t pages = a.settings.pages;
+  const uint8_t pages = a.settings.pages, charts = a.settings.charts;
   if (!s_nViews || a.posCount != s_lastPos || a.settings.defaultRange != s_lastDefault || ap != s_lastAp || dash != s_lastDash
-      || pages != s_lastPages) rebuildViews(a);
+      || pages != s_lastPages || charts != s_lastCharts) rebuildViews(a);
   if (!s_nViews) return;
 
   // advance

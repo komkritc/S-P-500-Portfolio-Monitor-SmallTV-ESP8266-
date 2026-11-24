@@ -124,6 +124,7 @@ struct Settings {
   uint16_t chartRefreshS;
   uint16_t pageRotateS;
   uint8_t  defaultRange;      // ChartRange
+  uint8_t  charts;            // chart ranges the LCD Market page cycles through: bit0 1D, bit1 5D, bit2 1M (default 7)
   uint8_t  pages;             // LCD pages in the rotation: bit0 Portfolio, bit1 Positions, bit2 Market, bit3 Realised P/L (default 15)
   uint8_t  tzMode;            // 0 = exchange (America/New_York), 1 = fixed local offset
   int16_t  localOffsetMin;

@@ -437,6 +437,13 @@ static void testSettings() {
     CHECK(po.find("\"pages\":9") != std::string::npos && po.find("\"pages\":[1,15]") != std::string::npos);
     Settings r2; settingsDefaults(r2); std::string pf; { JsonWriter w(sinkStr, &pf); settingsWrite(w, q, true, false); }
     CHECK(settingsLoadJson(r2, pf.data(), pf.size()) && r2.pages == 9);                                          // survives the flash round trip
+    CHECK(q.charts == 7); CHECK(applyS(q, "{\"charts\":5}") && q.charts == 5);
+    std::string ce; CHECK(!applyS(q, "{\"charts\":0}", &ce) && ce == "charts must be 1..7" && q.charts == 5);
+    CHECK(!applyS(q, "{\"charts\":8}")); CHECK(!applyS(q, "{\"charts\":\"3\"}")); CHECK(!applyS(q, "{\"charts\":1.5}"));
+    std::string co; { JsonWriter w(sinkStr, &co); settingsWrite(w, q, false, true); }
+    CHECK(co.find("\"charts\":5") != std::string::npos && co.find("\"charts\":[1,7]") != std::string::npos);
+    Settings r3; settingsDefaults(r3); std::string cf; { JsonWriter w(sinkStr, &cf); settingsWrite(w, q, true, false); }
+    CHECK(settingsLoadJson(r3, cf.data(), cf.size()) && r3.charts == 5);
     Settings old; settingsDefaults(old); const char *legacy = "{\"quoteRefreshS\":30}";                           // a settings file from before v1.1.2 has no pages
     CHECK(settingsLoadJson(old, legacy, strlen(legacy)) && old.pages == 15); }
   CHECK(!applyS(s, "{\"defaultRange\":\"1y\"}")); CHECK(!applyS(s, "{\"tzMode\":\"mars\"}")); CHECK(!applyS(s, "{\"tzMode\":1}"));
@@ -553,6 +560,19 @@ static void testViews() {
   CHECK(n == 1 && v[0].kind == V_AP);
   CHECK(pageDotCount(15) == 4 && pageDotCount(5) == 2 && pageDotCount(8) == 1 && pageDotCount(0) == 1);
   CHECK(pageDotIndex(5, 0) == 0 && pageDotIndex(5, 2) == 1 && pageDotIndex(15, 3) == 3 && pageDotIndex(10, 1) == 0 && pageDotIndex(10, 3) == 1);
+  // ---- which chart ranges the Market page cycles through (Settings::charts: 1 = 1D, 2 = 5D, 4 = 1M)
+  n = buildViews(v, MAX_VIEWS, 2, RANGE_1D, false, true, 4, 1 | 4);             // [x]1D [ ]5D [x]1M
+  CHECK(n == 2 && v[0].kind == V_MARKET && v[0].arg == 0 && v[1].kind == V_MARKET && v[1].arg == 2);
+  n = buildViews(v, MAX_VIEWS, 2, RANGE_1D, false, true, 4, 2);                 // 5D only
+  CHECK(n == 1 && v[0].arg == 1);
+  n = buildViews(v, MAX_VIEWS, 2, RANGE_5D, false, true, 4, 1 | 4);             // default 5D is off: starts at the next enabled one (1M), then 1D
+  CHECK(n == 2 && v[0].arg == 2 && v[1].arg == 0);
+  n = buildViews(v, MAX_VIEWS, 2, RANGE_1D, false, true, 4, 0);                 // empty mask = all three
+  CHECK(n == 3 && v[0].arg == 0 && v[1].arg == 1 && v[2].arg == 2);
+  n = buildViews(v, MAX_VIEWS, 2, RANGE_1D, false, true, 1, 2);                 // charts only matter while the Market page is on
+  CHECK(n == 1 && v[0].kind == V_PORTFOLIO);
+  n = buildViews(v, MAX_VIEWS, 2, RANGE_1D, false, true, 15, 1);                // all pages, 1D chart only: 1 + 1 + 1 + 1 views
+  CHECK(n == 1 + 1 + 1 + 1 && v[3].kind == V_MARKET && v[3].arg == 0);
   CHECK(nextIndex(4, 5) == 0 && nextIndex(0, 5) == 1 && nextIndex(0, 0) == 0);
   CHECK(pageOf(V_PORTFOLIO) == 0 && pageOf(V_POSITIONS) == 1 && pageOf(V_MARKET) == 2 && pageOf(V_REALISED) == 3 && pageOf(V_AP) == 3);
 }

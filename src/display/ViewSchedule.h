@@ -20,7 +20,9 @@ static const uint8_t MAX_VIEWS = 1 + 6 + 1 + 3 + 1;
 // dashboard=false (no saved Wi-Fi, setup AP only) -> just the AP view. apView adds the AP screen to the rotation.
 // `pages` = which dashboard pages rotate (Settings::pages): bit0 Portfolio, bit1 Positions, bit2 Market, bit3 Realised.
 // The Wi-Fi setup/rescue screen is never filtered by it, so a bad mask cannot lock anyone out of setup.
-uint8_t buildViews(View *out, uint8_t cap, uint8_t posCount, uint8_t defaultRange, bool apView, bool dashboard, uint8_t pages);
+// `charts` = which ranges the Market page cycles through (Settings::charts): bit0 1D, bit1 5D, bit2 1M. They start at
+// the default range and skip disabled ones; an empty mask means all three.
+uint8_t buildViews(View *out, uint8_t cap, uint8_t posCount, uint8_t defaultRange, bool apView, bool dashboard, uint8_t pages, uint8_t charts = 7);
 uint8_t pageDotCount(uint8_t pages);                 // dots shown in the header = enabled pages (>= 1)
 uint8_t pageDotIndex(uint8_t pages, uint8_t page);   // position of `page` among the enabled pages
 uint8_t pageOf(ViewKind k);                        // 0..2 the three dashboard pages, 3 = realised/AP
