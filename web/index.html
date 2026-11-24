@@ -133,7 +133,7 @@ dl{grid-template-columns:1fr;gap:0}dd{margin-bottom:6px}
 <div class="cards">
 <div class="card"><div class="l">Portfolio NAV <span id="c-upd" style="text-transform:none;letter-spacing:0">(N/A)</span></div><div class="v" id="c-nav">N/A</div><div class="s"><span class="b b-stale" id="pf-stale" hidden></span></div></div>
 <div class="card"><div class="l">Unrealised P/L</div><div class="v" id="c-pl">N/A</div><div class="s"></div></div>
-<div class="card"><div class="l">Realised P/L</div><div class="v" id="c-rpl">N/A</div><div class="s" id="c-rpl-s"></div></div>
+<div class="card"><div class="l">Realised P/L</div><div class="v" id="c-rpl">N/A</div><div class="s" id="c-rpl-s"></div><div class="s" id="c-rpl-y"></div></div>
 <div class="card"><div class="l">Lifetime P/L</div><div class="v" id="c-lpl">N/A</div><div class="s">open + realised</div></div>
 <div class="card"><div class="l">Return</div><div class="v" id="c-ret">N/A</div><div class="s"></div></div>
 <div class="card"><div class="l">Invested capital</div><div class="v" id="c-inv">N/A</div><div class="s"></div></div>
@@ -173,7 +173,7 @@ dl{grid-template-columns:1fr;gap:0}dd{margin-bottom:6px}
 
 <section id="sales" class="tab">
 <div class="cards">
-<div class="card" style="grid-column:1/-1"><div class="l">Realised P/L</div><div class="v" id="r-all">N/A</div><div class="s" id="r-all-s"></div></div>
+<div class="card" style="grid-column:1/-1"><div class="l">Realised P/L</div><div class="v" id="r-all">N/A</div><div class="s" id="r-all-s"></div><div class="s" id="r-all-y"></div></div>
 </div>
 <div class="panel"><h2>Sell</h2>
 <form id="vf" autocomplete="off">
@@ -305,7 +305,7 @@ if(!r.ok||(j&&j.ok===false))throw Object.assign(new Error((j&&j.error)||'HTTP '+
 return j}
 /* ---- poll scheduler ---- */
 let lr={},hold=0,tb=0;
-const J={status:[ldStatus,10000],portfolio:[()=>api('/api/portfolio').then(rPf),15000],market:[ldMarket,15000],positions:[ldPos,15000],
+const J={status:[ldStatus,10000],portfolio:[()=>api('/api/portfolio').then(rPf).then(()=>api('/api/realised')).then(rYr),15000],market:[ldMarket,15000],positions:[ldPos,15000],
 sales:[ldSales,15000],chart:[()=>ldChart(),20000],wifi:[()=>wbusy?0:api('/api/wifi/status').then(rWifi),5000]};
 const TJ={portfolio:['portfolio','market','positions'],market:['market','chart'],details:['positions'],sales:['positions','sales'],wifi:['wifi'],settings:[],system:[]};
 async function tick(){
@@ -406,7 +406,11 @@ go.disabled=false};
 let DS=null,soff=0,PV=null;
 async function ldSales(){DS=await api('/api/sales?offset='+soff+'&limit=8');rSales();
 const r=await api('/api/realised');rR(r)}
-function rR(r){
+/* this-year realised P/L: the calendar year in the display time zone (same rule as the LCD); a year with no sale is a real 0 */
+function curYear(){const d=new Date(now()*1000);try{if(fm.dk){const p=fm.dk.formatToParts(d).find(x=>x.type=='year');if(p)return+p.value}}catch(e){}return d.getUTCFullYear()}
+function rYr(r){const cy=curYear(),ok=r&&r.valid,e=ok&&(r.years||[]).find(y=>y.year==cy),v=ok?(e?e.pl:0):null;
+for(const id of['c-rpl-y','r-all-y']){const el=$(id);if(!el)continue;el.textContent='this year ('+cy+'): '+(ok?thb(v,1):NA);el.classList.toggle('pos',ok&&v>0);el.classList.toggle('neg',ok&&v<0)}}
+function rR(r){rYr(r);
 set('r-all',r.valid?thb(r.pl,1):NA,r.pl||0);
 set('r-all-s',r.valid?(r.count+' sale'+(r.count==1?'':'s')+(r.reversed?' \u00b7 '+r.reversed+' reversed':'')):'ledger not read yet')}
 const VC=[['date','Date',r=>i2d(r.date)],['id','ID',r=>r.id],['symbol','Symbol',r=>r.symbol],['qty','Qty',r=>nf(r.qty,4),1],
