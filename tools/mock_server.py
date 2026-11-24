@@ -489,7 +489,7 @@ ALIASES = {"SP500": "^GSPC", "S&P500": "^GSPC", "GSPC": "^GSPC", "SPX": "^SPX", 
 def status():
     off = SCENARIO == "offline"
     stale = SCENARIO in ("stale", "offline")
-    return {"fw": "1.1.0", "uptime": int(time.time() - BOOT), "time": {"epoch": now(), "synced": True},
+    return {"fw": "1.1.1", "uptime": int(time.time() - BOOT), "time": {"epoch": now(), "synced": True},
             "heap": {"free": 21000, "maxBlock": 17000, "frag": 12},
             "chip": {"id": "A1B2C3", "cpuMHz": 160, "flashKB": 4096, "sketchKB": 512, "freeSketchKB": 1019, "sdk": "3.1.2"},
             "fs": {"ok": True, "totalKB": 1024, "usedKB": 16 + len(POSITIONS)},

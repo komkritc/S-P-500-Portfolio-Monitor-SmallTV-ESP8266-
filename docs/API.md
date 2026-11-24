@@ -17,7 +17,7 @@ Conventions
 
 ### GET /api/status
 ```json
-{"fw":"1.1.0","uptime":3600,
+{"fw":"1.1.1","uptime":3600,
  "time":{"epoch":1795210554,"synced":true},
  "heap":{"free":21000,"maxBlock":17000,"frag":12},
  "chip":{"id":"A1B2C3","cpuMHz":160,"flashKB":4096,"sketchKB":512,"freeSketchKB":1019,"sdk":"3.1.2"},
