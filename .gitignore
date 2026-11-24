@@ -1,0 +1,4 @@
+.pio/
+tests/test_core.exe
+tests/test_core
+*.bin

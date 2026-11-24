@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>S&amp;P 500 Portfolio Monitor</title>
+<style>
+[hidden]{display:none!important}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:#05080c;color:#e6edf3;font:14px/1.45 system-ui,"Segoe UI",Roboto,Arial,sans-serif;overflow-x:hidden}
+header{position:sticky;top:0;z-index:5;background:#070c12;border-bottom:1px solid #172230;padding:10px 16px 0}
+.hd{max-width:1200px;margin:0 auto}
+.hr{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;justify-content:space-between;margin-bottom:8px}
+h1{font-size:16px;letter-spacing:.12em;color:#22d3ee;margin:0;font-weight:700}
+h2{font-size:12px;letter-spacing:.14em;color:#38bdf8;margin:0 0 10px;text-transform:uppercase}
+nav{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav a{color:#7d8b99;text-decoration:none;padding:8px 14px;border-bottom:2px solid transparent;font-size:12px;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+nav a:hover{color:#e6edf3}
+nav a.on{color:#22d3ee;border-color:#22d3ee}
+main{max-width:1200px;margin:0 auto;padding:16px}
+.tab{display:none}.tab.on{display:block}
+#pill{font-size:12px;padding:3px 10px;border-radius:99px;border:1px solid #1f3a2e;background:#0a1a13;color:#22c55e;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+#pill.w{border-color:#4a3510;background:#1c1407;color:#f59e0b}
+#pill.e{border-color:#4a1d1d;background:#1c0a0a;color:#ef4444}
+#bn{display:none;margin:0 0 12px;padding:8px 12px;border:1px solid #4a1d1d;background:#1c0a0a;color:#fca5a5;border-radius:6px}
+.card,.panel{background:#0b1118;border:1px solid #172230;border-radius:8px;padding:14px}
+.panel{margin-bottom:14px}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
+.card .l{font-size:11px;letter-spacing:.1em;color:#7d8b99;text-transform:uppercase}
+.card .v{font-size:clamp(17px,5vw,26px);font-weight:700;margin-top:4px;word-break:break-word}
+.card .s{font-size:12px;color:#7d8b99;min-height:17px}
+.pos{color:#22c55e!important}.neg{color:#ef4444!important}.g{color:#7d8b99}
+.big{font-size:clamp(26px,7vw,36px);font-weight:700}
+.qt{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;margin-bottom:10px}
+.qt .c{font-size:18px;font-weight:600}
+.kvs{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px 12px}
+.kv .l{display:block;font-size:11px;color:#7d8b99;text-transform:uppercase;letter-spacing:.08em}
+.kv .v{font-weight:600;word-break:break-word}
+.b{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;letter-spacing:.06em;border:1px solid #2a3744;color:#7d8b99;background:#101820;white-space:nowrap}
+.b-open,.b-fresh{color:#22c55e;border-color:#1f5a38;background:#0a1a13}
+.b-pre,.b-stale{color:#f59e0b;border-color:#5a4010;background:#1c1407}
+.b-missing,.b-invalid{color:#ef4444;border-color:#5a1d1d;background:#1c0a0a}
+.nt{padding:8px 12px;border-radius:6px;margin-bottom:12px;border:1px solid #5a4010;background:#1c1407;color:#fbbf24}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:7px 10px;text-align:left;border-bottom:1px solid #121c27;white-space:nowrap}
+th{font-size:11px;letter-spacing:.06em;color:#7d8b99;text-transform:uppercase;font-weight:600;user-select:none}
+th.s{cursor:pointer}th.s:hover{color:#22d3ee}
+.n{text-align:right}
+tfoot td,tr.tot td{font-weight:700;border-top:1px solid #2a3744;border-bottom:0}
+.rg{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.btn{background:#101a24;color:#e6edf3;border:1px solid #243445;border-radius:6px;padding:7px 14px;font:inherit;cursor:pointer}
+.btn:hover:not(:disabled){border-color:#22d3ee}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.on,.btn.p{background:#0e3a4a;border-color:#22d3ee;color:#e6fbff}
+.btn.d{background:#2a0e0e;border-color:#7f1d1d;color:#fecaca}
+.btn.x{padding:2px 9px;color:#ef4444}
+#cw{position:relative}
+#cv{width:100%;height:320px;display:block;touch-action:pan-y;cursor:crosshair}
+#tt{position:absolute;top:8px;pointer-events:none;background:#101a24ee;border:1px solid #2a3744;border-radius:6px;padding:4px 8px;font-size:12px;white-space:nowrap;display:none}
+.fg{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px 14px;margin-bottom:12px}
+label{display:block;font-size:11px;color:#7d8b99;text-transform:uppercase;letter-spacing:.08em}
+input,select{display:block;width:100%;margin-top:4px;background:#070c12;border:1px solid #243445;border-radius:6px;padding:8px 10px;color:#e6edf3;font:inherit;text-transform:none;letter-spacing:0}
+input:focus,select:focus{outline:none;border-color:#22d3ee}
+input.bad{border-color:#ef4444}
+input[type=checkbox]{display:inline-block;width:auto;margin:0 6px 0 0;vertical-align:middle}
+.dp{position:relative;display:flex;gap:6px;margin-top:4px}
+.dp input[type=text]{margin-top:0;flex:1;min-width:0}
+.dp .btn{padding:6px 10px;line-height:1;flex:none}
+.dp .nat{position:absolute;right:0;bottom:0;width:1px;height:1px;opacity:0;pointer-events:none;border:0;padding:0;margin:0}
+.er{color:#fca5a5;min-height:18px;margin:4px 0}
+.ok{color:#22c55e}
+.hl{font-size:13px;color:#9fb0c0;line-height:1.55}
+.hl code{color:#22d3ee}
+.row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+.row>div{flex:1;min-width:140px}
+.net{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:#0b1118;border:0;border-bottom:1px solid #121c27;color:#e6edf3;padding:9px 6px;font:inherit;cursor:pointer}
+.net:hover,.net.on{background:#101a24}
+.net .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bars{display:inline-flex;align-items:flex-end;gap:2px;height:14px}
+.bars i{width:3px;background:#2a3744;display:block}
+.bars i:nth-child(1){height:4px}.bars i:nth-child(2){height:7px}.bars i:nth-child(3){height:10px}.bars i:nth-child(4){height:14px}
+.bars i.on{background:#22d3ee}
+.sp{width:14px;height:14px;border:2px solid #22d3ee;border-top-color:transparent;border-radius:50%;animation:r 1s linear infinite;display:inline-block;vertical-align:middle}
+@keyframes r{to{transform:rotate(360deg)}}
+.pb{height:10px;background:#101a24;border-radius:5px;overflow:hidden;margin:6px 0}
+.pb>div{height:100%;background:#22d3ee;width:0}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:6px 18px;margin:0}
+dt{color:#7d8b99}dd{margin:0;word-break:break-word}
+.dz{border-color:#5a1d1d}
+.dz h2{color:#ef4444}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.cols>.panel{margin:0}
+#ts{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:20;max-width:92vw}
+#ts div{background:#0e3a4a;border:1px solid #22d3ee;padding:8px 14px;border-radius:6px;margin-top:6px;text-align:center}
+#ts div.e{background:#2a0e0e;border-color:#ef4444}
+#ov{position:fixed;inset:0;background:#05080cee;z-index:30;display:none;align-items:center;justify-content:center;text-align:center;padding:20px}
+#ov.on{display:flex}
+@media(max-width:900px){.cols{grid-template-columns:1fr}}
+@media(max-width:700px){
+main{padding:10px}header{padding:8px 10px 0}
+.cards{grid-template-columns:repeat(2,1fr);gap:8px}
+.card{padding:10px}
+#cv{height:240px}
+#pt .hm{display:none}
+#pt th,#pt td{padding:6px 5px;font-size:12px}
+dl{grid-template-columns:1fr;gap:0}dd{margin-bottom:6px}
+}
+</style>
+</head>
+<body>
+<noscript><div style="padding:20px;color:#fbbf24">JavaScript is required for the S&amp;P 500 Portfolio Monitor dashboard. Please enable it and reload.</div></noscript>
+<header><div class="hd">
+<div class="hr"><h1>S&amp;P 500 PORTFOLIO MONITOR</h1><span id="pill" class="e">connecting...</span></div>
+<nav id="nav">
+<a href="#portfolio">Portfolio</a><a href="#market">Market</a><a href="#details">Details</a><a href="#wifi">Wi-Fi</a><a href="#settings">Settings</a><a href="#system">System</a>
+</nav></div></header>
+<main>
+<div id="bn"></div>
+
+<section id="portfolio" class="tab">
+<div id="pf-inc" class="nt" hidden></div>
+<div class="cards">
+<div class="card"><div class="l">Portfolio NAV</div><div class="v" id="c-nav">N/A</div><div class="s"><span class="b b-stale" id="pf-stale" hidden></span></div></div>
+<div class="card"><div class="l">Total P/L</div><div class="v" id="c-pl">N/A</div><div class="s"></div></div>
+<div class="card"><div class="l">Return</div><div class="v" id="c-ret">N/A</div><div class="s"></div></div>
+<div class="card"><div class="l">Invested capital</div><div class="v" id="c-inv">N/A</div><div class="s"></div></div>
+<div class="card"><div class="l">Positions</div><div class="v" id="c-pos">N/A</div><div class="s" id="c-pos-s"></div></div>
+<div class="card"><div class="l">Last update</div><div class="v" id="c-upd" style="font-size:clamp(14px,4vw,18px)">N/A</div><div class="s"></div></div>
+</div>
+<div class="panel"><h2>S&amp;P 500 Index</h2><div id="ixp"></div></div>
+<div class="panel"><h2>Positions</h2><div class="tw"><table id="pt"></table></div></div>
+</section>
+
+<section id="market" class="tab">
+<div class="panel"><h2>S&amp;P 500 Index</h2><div id="mqp"></div></div>
+<div class="panel">
+<div class="rg" id="rg"><button class="btn" data-r="1d">1D</button><button class="btn" data-r="5d">5D</button><button class="btn" data-r="1mo">1M</button></div>
+<div id="cw"><canvas id="cv"></canvas><div id="tt"></div></div>
+<div class="qt" style="margin:10px 0 0"><span id="ch-sel" class="g"></span><span id="ch-chg" class="c"></span></div>
+<div class="qt g" style="margin:4px 0 0"><span id="ch-upd"></span><span class="b b-stale" id="ch-stale" hidden></span></div>
+</div>
+</section>
+
+<section id="details" class="tab">
+<div class="panel"><h2>Holdings</h2><div class="tw"><table id="dt"></table></div></div>
+<div class="panel"><h2>Add position</h2>
+<form id="af" autocomplete="off">
+<div class="fg">
+<label>Symbol<input id="a-sym" value="^GSPC" maxlength="15"></label>
+<label>Purchase date<div class="dp"><input id="a-date" type="text" inputmode="numeric" placeholder="dd/mm/yyyy" maxlength="10" autocomplete="off"><button class="btn" id="a-cal" type="button" title="Pick a date" aria-label="Pick a date">&#128197;</button><input id="a-nat" class="nat" type="date" tabindex="-1" aria-hidden="true"></div></label>
+<label>Amount (THB)<input id="a-thb" type="number" step="any" min="0" inputmode="decimal"></label>
+</div>
+<details style="margin-bottom:12px"><summary class="g" style="cursor:pointer">Advanced: enter quantity and buy price directly</summary>
+<div class="fg" style="margin-top:10px">
+<label>Quantity<input id="a-qty" type="number" step="any" min="0" inputmode="decimal"></label>
+<label>Buy price (index points)<input id="a-buy" type="number" step="any" min="0" inputmode="decimal"></label>
+</div></details>
+<div class="g" style="font-size:12px;margin-bottom:8px">With a THB amount the device looks up the closing price on that date (may take a few seconds). The same symbol and date updates the existing row.</div>
+<button class="btn p" id="a-go" type="submit">Add position</button> <span id="a-msg"></span>
+</form></div>
+</section>
+
+<section id="wifi" class="tab">
+<div class="cols">
+<div class="panel"><h2>Current connection</h2><dl id="w-dl"></dl>
+<div id="w-ap" class="nt" style="margin:12px 0 0" hidden></div>
+<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="w-rc">Reconnect</button><button class="btn d" id="w-fg">Forget saved network</button></div></div>
+<div class="panel"><h2>Join a network</h2>
+<div class="row"><div><label>SSID<input id="w-ssid" maxlength="32" autocomplete="off" autocapitalize="off"></label></div>
+<div><label>Password<input id="w-pw" type="password" maxlength="64" autocomplete="new-password"></label></div>
+<button class="btn" id="w-sh" type="button">Show</button></div>
+<div style="margin-top:12px"><button class="btn p" id="w-go">Connect</button> <span id="w-msg"></span></div></div>
+</div>
+<div class="panel" style="margin-top:14px"><h2>Nearby networks</h2>
+<div style="margin-bottom:8px"><button class="btn" id="w-sc">Scan</button> <span class="sp" id="w-sp" hidden></span> <span class="g" id="w-sa"></span></div>
+<div id="w-nets"></div></div>
+<div class="panel hl"><h2>Rescue access point</h2>
+If the device cannot join your Wi-Fi (or has no saved network) it starts its own access point named <code>sp500-setup-XXXXXX</code>. The access key is shown on the device LCD. Connect your phone or computer to that network, then open <code>http://192.168.4.1</code> (the Wi-Fi page opens automatically on most phones) and join your home network. After the device switches network this page may lose its connection: reconnect to your normal Wi-Fi and open <code>http://sp500.local</code> or the new IP address shown on the LCD.</div>
+</section>
+
+<section id="settings" class="tab">
+<div class="panel"><h2>Settings</h2>
+<form id="sf" autocomplete="off" novalidate>
+<div class="fg">
+<label>Portfolio refresh (s)<input id="s-portfolioRefreshS" type="number"></label>
+<label>Quote refresh (s)<input id="s-quoteRefreshS" type="number"></label>
+<label>Chart refresh (s)<input id="s-chartRefreshS" type="number"></label>
+<label>Page rotate (s)<input id="s-pageRotateS" type="number"></label>
+<label>Default chart range<select id="s-defaultRange"><option value="1d">1D</option><option value="5d">5D</option><option value="1mo">1M</option></select></label>
+<label>Time zone<select id="s-tzMode"><option value="exchange">Exchange (America/New_York)</option><option value="local">Local (fixed UTC offset)</option></select></label>
+<label id="s-off">UTC offset (minutes)<input id="s-localOffsetMin" type="number"></label>
+<label>Hostname<input id="s-hostname" maxlength="31" autocapitalize="off"></label>
+<div><label>Admin password<input id="s-adminPass" type="password" autocomplete="new-password" placeholder="leave empty to keep"></label>
+<label style="margin-top:6px;text-transform:none;letter-spacing:0"><input type="checkbox" id="s-clr">remove admin password</label><div class="g" id="s-aps" style="font-size:12px"></div></div>
+</div>
+<div class="er" id="s-err"></div>
+<button class="btn p" id="s-go" type="submit">Save settings</button>
+</form></div>
+<div class="panel"><h2>Actions</h2><div style="display:flex;gap:8px;flex-wrap:wrap">
+<button class="btn" id="s-rf">Refresh all now</button><button class="btn" id="s-cc">Clear cache</button></div></div>
+</section>
+
+<section id="system" class="tab">
+<div class="cols">
+<div class="panel"><h2>Device</h2><dl id="y-dl"></dl>
+<div style="margin-top:12px"><div class="g">LittleFS usage <span id="y-fst"></span></div><div class="pb"><div id="y-fsb"></div></div></div></div>
+<div>
+<div class="panel"><h2>Access addresses</h2><div class="hl"><code id="y-a1">http://sp500.local</code><br><code id="y-a2"></code></div></div>
+<div class="panel"><h2>Firmware update (OTA)</h2>
+<div class="hl" style="margin-bottom:8px">Select a compiled <code>.bin</code> firmware file. The device reboots after a successful upload.</div>
+<input type="file" id="o-f" accept=".bin"><div style="margin-top:10px"><button class="btn p" id="o-go">Upload firmware</button></div>
+<div class="pb"><div id="o-pb"></div></div><div id="o-msg"></div></div>
+<div class="panel"><h2>Maintenance</h2><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="y-rs">Restart</button><button class="btn d" id="y-rst">Reset settings</button></div></div>
+<div class="panel dz"><h2>Danger zone</h2><div class="hl" style="margin-bottom:10px">Factory reset erases settings, Wi-Fi credentials, portfolio and cache. The device restarts into the setup access point.</div><button class="btn d" id="y-fr">Factory reset</button></div>
+</div></div>
+</section>
+</main>
+<div id="ts"></div>
+<div id="ov"><div><div class="sp" style="width:28px;height:28px"></div><p id="ov-t" class="hl"></p></div></div>
+<script>
+'use strict';
+const $=i=>document.getElementById(i),sl=ms=>new Promise(r=>setTimeout(r,ms));
+const E=(t,c,x,id)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;if(id)e.id=id;return e};
+/* dates: the API speaks ISO yyyy-mm-dd, the UI shows and accepts dd/mm/yyyy */
+const todayISO=()=>new Date(Date.now()-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,10);
+const i2d=s=>/^\d{4}-\d\d-\d\d$/.test(s||'')?s.slice(8)+'/'+s.slice(5,7)+'/'+s.slice(0,4):(s||'');
+function d2i(s){const m=/^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s||'');if(!m)return null;const d=+m[1],mo=+m[2],y=+m[3],t=new Date(Date.UTC(y,mo-1,d));
+if(y<1970||t.getUTCFullYear()!=y||t.getUTCMonth()!=mo-1||t.getUTCDate()!=d)return null;return m[3]+'-'+m[2]+'-'+m[1]}
+const NA='N/A',TABS=['portfolio','market','details','wifi','settings','system'];
+const nf=(x,d)=>x==null||!isFinite(x)?NA:Number(x).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const thb=(x,s)=>x==null?NA:(x<0?'-':s&&x>0?'+':'')+'THB '+nf(Math.abs(x),2);
+const pts=(x,s)=>x==null?NA:(s&&x>0?'+':'')+nf(x,2);
+const pc=x=>x==null?NA:(x>0?'+':'')+nf(x,2)+'%';
+const age=s=>s<0?'0s':s<60?Math.round(s)+'s':s<3600?Math.floor(s/60)+'m':s<86400?Math.floor(s/3600)+'h '+Math.floor(s%3600/60)+'m':Math.floor(s/86400)+'d '+Math.floor(s%86400/3600)+'h';
+let skew=0,S=null,MK=null,cur='portfolio',tzm='exchange',tzo=0,tzn='America/New_York',fm={},rangeInit=0;
+const now=()=>(Date.now()+skew)/1000;
+const lt=e=>e?new Date(e*1000).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}):'never';
+function set(id,x,s){const e=$(id);if(!e)return;e.textContent=x;if(s!==undefined){e.classList.toggle('pos',s>0);e.classList.toggle('neg',s<0)}}
+function mkfmt(){const z=tzm=='local'?'UTC':tzn,o={timeZone:z,hourCycle:'h23'},F=x=>new Intl.DateTimeFormat('en-US',Object.assign({},o,x));
+fm={hm:F({hour:'2-digit',minute:'2-digit'}),md:F({month:'short',day:'numeric'}),dk:F({year:'numeric',month:'2-digit',day:'2-digit'})}}
+const sh=e=>(tzm=='local'?e+tzo*60:e)*1000;
+const tzl=()=>tzm=='local'?'UTC'+(tzo<0?'-':'+')+Math.floor(Math.abs(tzo)/60)+(tzo%60?':'+String(Math.abs(tzo)%60).padStart(2,'0'):''):(MK&&MK.timezone)||'ET';
+const mt=e=>e?fm.md.format(sh(e))+', '+fm.hm.format(sh(e))+' '+tzl():'never';
+function toast(m,er){const d=E('div',er?'e':'',m);$('ts').append(d);setTimeout(()=>d.remove(),er?6000:3500)}
+function banner(m){const b=$('bn');b.style.display=m?'block':'none';b.textContent=m||''}
+function pill(t,c){const p=$('pill');p.textContent=t;p.className=c||''}
+function stB(id,stale,ep){const e=$(id);e.hidden=!stale;e.textContent='STALE'+(stale&&ep?' \u00b7 '+age(now()-ep):'')}
+/* ---- request queue: one request at a time ---- */
+let Q=Promise.resolve();
+function api(p,b){const r=Q.then(()=>req(p,b));Q=r.catch(()=>{});return r}
+async function req(p,b){
+const c=new AbortController(),tm=setTimeout(()=>c.abort(),20000);let r;
+try{r=await fetch(p,b===undefined?{signal:c.signal,cache:'no-store'}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b),signal:c.signal})}
+catch(e){pill('OFFLINE','e');banner('Device not reachable. Retrying...');throw Object.assign(new Error('Device not reachable'),{net:1})}
+finally{clearTimeout(tm)}
+let j=null;try{j=await r.json()}catch(e){}
+if(r.status==401){const m='Authorization required: sign in as "admin" with the admin password.';banner(m);throw Object.assign(new Error(m),{st:401})}
+banner('');
+if(!r.ok||(j&&j.ok===false))throw Object.assign(new Error((j&&j.error)||'HTTP '+r.status),{st:r.status});
+return j}
+/* ---- poll scheduler ---- */
+let lr={},hold=0,tb=0;
+const J={status:[ldStatus,10000],portfolio:[()=>api('/api/portfolio').then(rPf),15000],market:[ldMarket,15000],positions:[ldPos,15000],
+chart:[()=>ldChart(),20000],wifi:[()=>wbusy?0:api('/api/wifi/status').then(rWifi),5000]};
+const TJ={portfolio:['portfolio','market','positions'],market:['market','chart'],details:['positions'],wifi:['wifi'],settings:[],system:[]};
+async function tick(){
+if(tb||hold||document.hidden)return;tb=1;
+try{for(const n of ['status'].concat(TJ[cur])){const j=J[n];if(Date.now()-(lr[n]||0)>=j[1]){lr[n]=Date.now();try{await j[0]()}catch(e){if(e.st&&e.st!=401)banner(e.message)}}if(hold||document.hidden)break}}
+finally{tb=0}}
+setInterval(tick,1000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){lr={};tick()}});
+/* ---- status / header ---- */
+let ST=null;
+async function ldStatus(){const s=await api('/api/status');ST=s;if(s.time&&s.time.synced)skew=s.time.epoch*1000-Date.now();
+const w=s.wifi||{};
+if(w.mode=='sta'&&w.connected)pill('\u25cf '+w.ssid+(w.rssi!=null?'  '+w.rssi+' dBm':''));
+else if(w.mode=='sta')pill('\u25cf Wi-Fi down','e');
+else pill('\u25cf '+(w.mode=='ap-setup'?'AP setup':'AP rescue')+' '+(w.ip||''),'w');
+if(cur=='system')rSys(s)}
+/* ---- quote panel ---- */
+function qp(el,p,full){
+const t=E('div','qt');t.append(E('span','big',NA,p+'-last'),E('span','c',NA,p+'-chg'),E('span','c',NA,p+'-pct'),E('span','b',NA,p+'-st'),E('span','b b-stale','STALE',p+'-stale'));el.append(t);
+const g=E('div','kvs');
+(full?[['Prev close','pc'],['Open','op'],['High','hi'],['Low','lo'],['Session date','sd'],['Quote time','qt']]:[['Quote time','qt']]).forEach(a=>{const k=E('div','kv');k.append(E('span','l',a[0]),E('span','v',NA,p+'-'+a[1]));g.append(k)});
+el.append(g);$(p+'-stale').hidden=true}
+const SBC={OPEN:'b-open','PRE-MARKET':'b-pre'};
+function rQ(p,m){
+const v=m&&m.valid;
+set(p+'-last',v?nf(m.last,2):NA);
+set(p+'-chg',v?pts(m.change,1):NA,v?m.change:0);set(p+'-pct',v?pc(m.changePct):NA,v?m.changePct:0);
+const s=$(p+'-st');s.textContent=m&&m.status||NA;s.className='b '+(SBC[m&&m.status]||'');
+stB(p+'-stale',m&&m.stale,m&&m.fetchedEpoch);
+if(!$(p+'-pc'))return set(p+'-qt',v?m.quoteTimeText:NA);
+set(p+'-pc',v?nf(m.prevClose,2):NA);set(p+'-op',v?nf(m.open,2):NA);set(p+'-hi',v?nf(m.high,2):NA);set(p+'-lo',v?nf(m.low,2):NA);
+set(p+'-sd',v&&m.sessionDate||NA);set(p+'-qt',v&&m.quoteTimeText||NA)}
+async function ldMarket(){const m=await api('/api/market');MK=m;rQ('ix',m);rQ('mq',m)}
+/* ---- portfolio ---- */
+function rPf(d){
+const s=d.summary||{};
+set('c-nav',thb(s.nav));set('c-pl',thb(s.pl,1),s.pl||0);set('c-ret',pc(s.returnPct),s.returnPct||0);set('c-inv',thb(s.invested));
+set('c-pos',s.positions==null?NA:String(s.positions));set('c-pos-s',s.positions==null?'':s.priced+' priced'+(s.invalid?' \u00b7 '+s.invalid+' invalid':''));
+set('c-upd',lt(d.updated));stB('pf-stale',s.stale,d.updated);
+const i=$('pf-inc');i.hidden=s.complete!==false;
+if(!i.hidden){const n=s.positions-s.priced-(s.invalid||0);i.textContent='incomplete: '+(n>0?n+' position'+(n>1?'s':''):'some positions')+' without quote \u2013 NAV, P/L and return are N/A until all quotes are available'}}
+/* ---- positions tables ---- */
+const PC=[
+{k:'symbol',l:'Symbol',f:r=>r.symbol},
+{k:'qty',l:'Quantity',f:r=>nf(r.qty,4),n:1},
+{k:'buy',l:'Buy price',f:r=>nf(r.buy,2),n:1},
+{k:'date',l:'Purchase date',f:r=>i2d(r.date),h:1},
+{k:'price',l:'Current price',f:r=>nf(r.price,2),n:1},
+{k:'cost',l:'Cost',f:r=>thb(r.cost),n:1,h:1},
+{k:'nav',l:'Current NAV',f:r=>thb(r.nav),n:1},
+{k:'pl',l:'Unrealised P/L',f:r=>thb(r.pl,1),n:1,s:r=>r.pl},
+{k:'returnPct',l:'Return %',f:r=>pc(r.returnPct),n:1,s:r=>r.returnPct},
+{k:'quote',l:'Quote',f:r=>r.quote,b:1}];
+const CK=['symbol','date','cost','nav','pl','returnPct','quote'];
+let DP=null,sort={k:'i',d:1};
+function rpos(tb,keys,full){
+tb.replaceChildren();if(!DP)return;
+const cols=PC.filter(c=>keys.includes(c.k)),rows=(DP.positions||[]).slice();
+if(full)rows.sort((a,b)=>{let x=a[sort.k],y=b[sort.k];if(x==null)return y==null?0:1;if(y==null)return -1;return(typeof x=='string'?x.localeCompare(y):x-y)*sort.d});
+const th=E('tr');
+cols.forEach(c=>{const h=E('th',(c.n?'n ':'')+(c.h?'hm ':'')+(full?'s':''),c.l+(full&&sort.k==c.k?(sort.d>0?' \u25b2':' \u25bc'):''));
+if(full)h.onclick=()=>{sort=sort.k==c.k?{k:c.k,d:-sort.d}:{k:c.k,d:1};rpos(tb,keys,full)};th.append(h)});
+if(full)th.append(E('th'));
+const hd=E('thead');hd.append(th);tb.append(hd);
+const bd=E('tbody');tb.append(bd);
+if(!rows.length){const r=E('tr'),t=E('td','g','No positions');t.colSpan=cols.length+(full?1:0);r.append(t);bd.append(r)}
+rows.forEach(r=>{const tr=E('tr');
+cols.forEach(c=>{const td=E('td',(c.n?'n ':'')+(c.h?'hm':''));if(c.b)td.append(E('span','b b-'+r.quote,String(r.quote).toUpperCase()));else{td.textContent=c.f(r);if(c.s){const v=c.s(r);if(v>0)td.classList.add('pos');else if(v<0)td.classList.add('neg')}}tr.append(td)});
+if(full){const td=E('td','n'),b=E('button','btn x','\u00d7');b.title='Delete';b.onclick=()=>delPos(r,b);td.append(b);tr.append(td)}
+bd.append(tr)});
+if(full&&DP.summary){const s=DP.summary,tr=E('tr','tot');
+cols.forEach(c=>{const td=E('td',c.n?'n':'');const m={symbol:'TOTAL',cost:thb(s.invested),nav:thb(s.nav),pl:thb(s.pl,1),returnPct:pc(s.returnPct)};td.textContent=m[c.k]||'';
+if(c.k=='pl'&&s.pl>0||c.k=='returnPct'&&s.returnPct>0)td.classList.add('pos');if(c.k=='pl'&&s.pl<0||c.k=='returnPct'&&s.returnPct<0)td.classList.add('neg');tr.append(td)});
+tr.append(E('td'));bd.append(tr)}}
+async function ldPos(){DP=await api('/api/positions');rpos($('pt'),CK);rpos($('dt'),PC.map(c=>c.k),1)}
+async function delPos(r,b){
+if(!confirm('Delete position '+r.symbol+' ('+i2d(r.date)+')?'))return;
+b.disabled=true;try{await api('/api/positions/delete',{index:r.i});toast('Position deleted');await ldPos()}catch(e){toast(e.message,1);b.disabled=false}}
+$('af').onsubmit=async ev=>{ev.preventDefault();
+const m=$('a-msg'),go=$('a-go');m.className='er';m.textContent='';
+const sym=$('a-sym').value.trim().toUpperCase(),date=d2i($('a-date').value.trim()),thbv=$('a-thb').value,q=$('a-qty').value,bp=$('a-buy').value;
+if(!/^[A-Z0-9^.=-]{1,15}$/.test(sym))return m.textContent='Invalid symbol';
+if(!date){$('a-date').classList.add('bad');return m.textContent='Enter the purchase date as dd/mm/yyyy (a real calendar date)'}
+$('a-date').classList.remove('bad');
+if(date>todayISO())return m.textContent='Date is in the future';
+let b={symbol:sym,date};
+if(q||bp){if(!(q>0&&bp>0))return m.textContent='Quantity and buy price must both be positive numbers';b.qty=+q;b.buy=+bp}
+else{if(!(thbv>0))return m.textContent='Enter a THB amount greater than 0';b.thb=+thbv}
+go.disabled=true;m.className='g';m.textContent='Adding...';
+try{let r=await api('/api/positions',b);
+if(r.state=='pending'){m.textContent='Looking up closing price...';
+for(let k=0;k<45;k++){await sl(1000);while(document.hidden)await sl(1000);const j=await api('/api/positions/job');if(j.state=='error')throw new Error(j.error||'Lookup failed');if(j.state=='ok'||(j.state=='idle'&&k>2))break;if(k==44)throw new Error('Timed out waiting for the device')}}
+m.className='ok';m.textContent='Position added';toast('Position added');$('a-thb').value=$('a-qty').value=$('a-buy').value='';await ldPos()}
+catch(e){m.className='er';m.textContent=e.message}
+go.disabled=false};
+/* ---- chart ---- */
+const RL={'1d':'1D','5d':'5D','1mo':'1M'};
+let range='1d',CC={},fl={},hov=-1,cv=$('cv'),cx=cv.getContext('2d'),W=0,H=0;
+const PL=58,PT=10,PB=24,PR=10;
+function ensureS(){return S?Promise.resolve():(fl.s||(fl.s=api('/api/settings').then(applyS).finally(()=>delete fl.s)))}
+function applyS(s){S=s;tzm=s.tzMode;tzo=s.localOffsetMin||0;mkfmt();for(const k in CC)CC[k].tk=null;
+if(!rangeInit){rangeInit=1;if(RL[s.defaultRange])range=s.defaultRange}rBtns();return s}
+function rBtns(){document.querySelectorAll('#rg .btn').forEach(b=>b.classList.toggle('on',b.dataset.r==range))}
+async function ldMarketTab(){await ensureS();if(cur=='market'){sizeCv();rChart()}}
+function ldChart(force){
+const r=range;if(!S)return ensureS().then(()=>ldChart(force));
+const c=CC[r];if(!force&&c&&Date.now()-c.at<60000)return Promise.resolve();
+return fl[r]||(fl[r]=api('/api/chart?range='+r+'&max='+(innerWidth<600?200:400)).then(d=>{CC[r]={d,at:Date.now()-(d.valid?0:50000)};if(r==range)rChart()}).finally(()=>delete fl[r]))}
+function sizeCv(){const r=cv.getBoundingClientRect(),p=window.devicePixelRatio||1;W=r.width;H=r.height;cv.width=Math.round(W*p);cv.height=Math.round(H*p);cx.setTransform(p,0,0,p,0,0)}
+function ticks(c){
+const d=c.d,t=d.t,o=[],sp=[];let pk=null,ph=null;
+for(let i=0;i<t.length;i++){const dk=fm.dk.format(sh(t[i])),hh=fm.hm.format(sh(t[i])).slice(0,2);
+if(dk!=pk){if(i)sp.push(i);if(range!='1d')o.push({i,x:fm.md.format(sh(t[i]))})}
+if(range=='1d'&&hh!=ph)o.push({i,x:fm.hm.format(sh(t[i]))});
+pk=dk;ph=hh}
+c.tk=o;c.sp=range=='5d'?sp:[]}
+function rChart(){
+rBtns();const c=CC[range],d=c&&c.d,v=d&&d.valid&&d.count>=2;
+set('ch-sel','Selected period: '+RL[range]);
+set('ch-chg',v?pts(d.change,1)+' pts ('+pc(d.changePct)+')':NA,v?(d.change>=0?1:-1):0);
+set('ch-upd','Last successful update: '+(d&&d.updated?mt(d.updated):'never'));
+stB('ch-stale',d&&d.stale,d&&d.updated);
+draw()}
+function draw(){
+if(!W)return;cx.clearRect(0,0,W,H);
+const c=CC[range],d=c&&c.d;cx.font='11px system-ui,Segoe UI,Arial,sans-serif';
+if(!d||!d.valid||d.count<2){cx.fillStyle='#7d8b99';cx.textAlign='center';cx.fillText(c?'No chart data available (N/A)':'Loading...',W/2,H/2);return}
+if(!c.tk)ticks(c);
+const v=d.v,n=v.length,pw=W-PL-PR,ph=H-PT-PB,base=range=='1d'&&d.base!=null?d.base:null;
+let mn=Math.min.apply(null,v),mx=Math.max.apply(null,v);if(base!=null){mn=Math.min(mn,base);mx=Math.max(mx,base)}
+const pd=(mx-mn)*.08||1,lo=mn-pd,hi=mx+pd,X=i=>PL+pw*i/(n-1),Y=x=>PT+ph*(1-(x-lo)/(hi-lo)),col=d.change>=0?'#22c55e':'#ef4444';
+cx.lineWidth=1;cx.strokeStyle='#172230';cx.fillStyle='#7d8b99';cx.textAlign='right';cx.textBaseline='middle';
+for(let k=0;k<5;k++){const x=lo+(hi-lo)*k/4,y=Y(x);cx.beginPath();cx.moveTo(PL,y+.5);cx.lineTo(W-PR,y+.5);cx.stroke();cx.fillText(nf(x,hi-lo<20?2:0),PL-6,y)}
+cx.textBaseline='top';let lx=-99;
+for(const k of c.tk){const x=X(k.i);if(x-lx<64||x>W-PR-14)continue;lx=x;cx.textAlign=x<PL+22?'left':'center';cx.fillText(k.x,x,H-PB+6)}
+cx.strokeStyle='#223142';cx.setLineDash([3,3]);
+for(const i of c.sp){const x=Math.round(X(i-.5))+.5;cx.beginPath();cx.moveTo(x,PT);cx.lineTo(x,H-PB);cx.stroke()}
+if(base!=null){const y=Math.round(Y(base))+.5;cx.beginPath();cx.moveTo(PL,y);cx.lineTo(W-PR,y);cx.stroke()}
+cx.setLineDash([]);
+const g=cx.createLinearGradient(0,PT,0,H-PB);g.addColorStop(0,col+'55');g.addColorStop(1,col+'05');
+cx.beginPath();cx.moveTo(X(0),H-PB);for(let i=0;i<n;i++)cx.lineTo(X(i),Y(v[i]));cx.lineTo(X(n-1),H-PB);cx.closePath();cx.fillStyle=g;cx.fill();
+cx.beginPath();for(let i=0;i<n;i++){i?cx.lineTo(X(i),Y(v[i])):cx.moveTo(X(i),Y(v[i]))}cx.strokeStyle=col;cx.lineWidth=1.6;cx.lineJoin='round';cx.stroke();
+const tt=$('tt');
+if(hov>=0&&hov<n){const x=X(hov),y=Y(v[hov]);cx.strokeStyle='#7d8b99';cx.lineWidth=1;cx.beginPath();cx.moveTo(Math.round(x)+.5,PT);cx.lineTo(Math.round(x)+.5,H-PB);cx.stroke();
+cx.fillStyle=col;cx.beginPath();cx.arc(x,y,4,0,7);cx.fill();cx.strokeStyle='#05080c';cx.stroke();
+tt.textContent=fm.md.format(sh(d.t[hov]))+', '+fm.hm.format(sh(d.t[hov]))+'  '+nf(v[hov],2);tt.style.display='block';
+tt.style.left=x>W/2?'auto':Math.min(x+12,W-130)+'px';tt.style.right=x>W/2?(W-x+12)+'px':'auto'}else tt.style.display='none'}
+function hv(e){const c=CC[range],d=c&&c.d;if(!d||!d.valid||d.count<2)return;const r=cv.getBoundingClientRect();
+hov=Math.max(0,Math.min(d.count-1,Math.round((e.clientX-r.left-PL)/(W-PL-PR)*(d.count-1))));draw()}
+cv.addEventListener('pointermove',hv);cv.addEventListener('pointerdown',hv);
+['pointerleave','pointercancel'].forEach(n=>cv.addEventListener(n,()=>{hov=-1;draw()}));
+addEventListener('resize',()=>{if(cur=='market'){sizeCv();draw()}});
+$('rg').onclick=e=>{const r=e.target.dataset&&e.target.dataset.r;if(!r)return;range=r;hov=-1;rChart();ldChart().catch(()=>{})};
+/* ---- wifi ---- */
+let wbusy=0,scanning=0;
+const bars=r=>{const n=r>=-55?4:r>=-65?3:r>=-75?2:r>=-85?1:0,b=E('span','bars');for(let i=0;i<4;i++)b.append(E('i',i<n?'on':''));return b};
+const LOCK='<svg width="12" height="14" viewBox="0 0 12 14"><rect x="1" y="6" width="10" height="7" rx="1" fill="currentColor"/><path d="M3 6V4a3 3 0 016 0v2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>';
+function dl(el,rows){el.replaceChildren();rows.forEach(r=>{const dd=E('dd','',r[1]);if(r[2])dd.append(r[2]);el.append(E('dt','',r[0]),dd)})}
+function rWifi(s){
+const c=s.connect||{};
+dl($('w-dl'),[['Status',s.state+' ('+s.mode+')'],['SSID',s.ssid||NA],['IP address',s.ip||NA],['Signal',s.rssi!=null&&s.state=='connected'?s.rssi+' dBm ':NA,s.rssi!=null&&s.state=='connected'?bars(s.rssi):0],['mDNS',s.mdns||NA],['Saved network',s.saved?'yes':'no']]);
+const a=$('w-ap');a.hidden=!s.apSsid;if(s.apSsid)a.textContent='Access point active: '+s.apSsid+' at http://'+(s.apIp||'192.168.4.1')+' (key on the device LCD)';
+$('w-fg').disabled=!s.saved}
+function rNets(d){
+const el=$('w-nets'),m={};
+(d.networks||[]).forEach(n=>{if(n.ssid&&(!m[n.ssid]||m[n.ssid].rssi<n.rssi))m[n.ssid]=n});
+const l=Object.values(m).sort((a,b)=>b.rssi-a.rssi);el.replaceChildren();
+if(!l.length)el.append(E('div','g',d.scanning?'Scanning...':'No networks found. Press Scan.'));
+l.forEach(n=>{const b=E('button','net'+($('w-ssid').value==n.ssid?' on':''));b.type='button';b.append(bars(n.rssi),E('span','nm',n.ssid),E('span','g',n.rssi+' dBm'));
+const k=E('span','g');if(n.enc)k.innerHTML=LOCK;else k.textContent='open';b.append(k);
+b.onclick=()=>{$('w-ssid').value=n.ssid;$('w-pw').value='';rNets(d);if(n.enc)$('w-pw').focus()};el.append(b)});
+$('w-sa').textContent=d.scanning?'':(d.ageSec!=null?'scanned '+age(d.ageSec)+' ago':'')}
+async function scan(refresh){
+if(scanning)return;scanning=1;$('w-sp').hidden=false;$('w-sc').disabled=true;
+try{let d=await api('/api/wifi/scan'+(refresh?'?refresh=1':''));rNets(d);
+for(let k=0;d.scanning&&k<30;k++){await sl(1500);while(document.hidden)await sl(1000);d=await api('/api/wifi/scan');rNets(d)}}
+catch(e){toast(e.message,1)}
+scanning=0;$('w-sp').hidden=true;$('w-sc').disabled=false}
+$('w-sc').onclick=()=>scan(1);
+$('w-sh').onclick=()=>{const p=$('w-pw'),h=p.type=='password';p.type=h?'text':'password';$('w-sh').textContent=h?'Hide':'Show'};
+$('w-go').onclick=async()=>{
+const ssid=$('w-ssid').value.trim(),m=$('w-msg'),go=$('w-go');m.className='er';
+if(!ssid)return m.textContent='Select or enter an SSID';
+go.disabled=true;wbusy=1;m.className='g';m.textContent='Connecting to '+ssid+'...';
+try{await api('/api/wifi/connect',{ssid,password:$('w-pw').value});let lost=0;
+for(let k=0;k<40;k++){await sl(1500);
+try{const s=await api('/api/wifi/status');rWifi(s);const c=s.connect||{};
+if(c.state=='ok'){m.className='ok';m.textContent='Connected to '+(s.ssid||ssid)+'. Device IP: '+(s.ip||NA)+'. If your computer is on a different network, join it and open http://'+(s.ip||'sp500.local')+' or http://sp500.local';$('w-pw').value='';break}
+if(c.state=='failed'){m.className='er';m.textContent='Connection failed: '+(c.error||'unknown error')+'. The previous network was restored.';break}}
+catch(e){if(e.st)throw e;if(++lost>=3){m.className='g';m.textContent='Connection to the device was lost. This is expected if it switched to another network: join that network and open http://sp500.local or the IP shown on the LCD.';break}}
+if(k==39){m.className='er';m.textContent='Timed out waiting for the result'}}}
+catch(e){m.className='er';m.textContent=e.message}
+wbusy=0;go.disabled=false};
+$('w-rc').onclick=function(){act(this,async()=>{await api('/api/wifi/reconnect',{});toast('Reconnecting...')})};
+$('w-fg').onclick=function(){if(!typed('FORGET','Forget the saved Wi-Fi network? The device will start its setup access point.'))return;act(this,async()=>{await api('/api/wifi/forget',{confirm:'FORGET'});toast('Saved network removed');wbusy=0})};
+/* ---- settings ---- */
+const NK=['portfolioRefreshS','quoteRefreshS','chartRefreshS','pageRotateS','localOffsetMin'];
+function fS(s){
+NK.forEach(k=>{const i=$('s-'+k);i.value=s[k];if(s.limits&&s.limits[k]){i.min=s.limits[k][0];i.max=s.limits[k][1];i.title='Allowed: '+s.limits[k][0]+'..'+s.limits[k][1]}});
+$('s-defaultRange').value=s.defaultRange;$('s-tzMode').value=s.tzMode;$('s-hostname').value=s.hostname;
+$('s-adminPass').value='';$('s-clr').checked=false;$('s-aps').textContent=s.adminPassSet?'An admin password is set.':'No admin password set (open access).';tzv()}
+const tzv=()=>{$('s-off').style.display=$('s-tzMode').value=='local'?'':'none'};
+$('s-tzMode').onchange=tzv;
+async function ldSet(){try{fS(applyS(await api('/api/settings')))}catch(e){$('s-err').textContent=e.message}}
+$('sf').onsubmit=async ev=>{ev.preventDefault();
+const er=$('s-err'),b={},L=(S&&S.limits)||{};er.textContent='';er.className='er';
+document.querySelectorAll('#sf input').forEach(i=>i.classList.remove('bad'));
+for(const k of NK){if(k=='localOffsetMin'&&$('s-tzMode').value!='local')continue;const i=$('s-'+k),v=i.value.trim(),l=L[k]||[-1e9,1e9];
+if(!/^-?\d+$/.test(v)||+v<l[0]||+v>l[1]){i.classList.add('bad');i.focus();return er.textContent=k+' must be an integer '+l[0]+'..'+l[1]}b[k]=+v}
+b.defaultRange=$('s-defaultRange').value;b.tzMode=$('s-tzMode').value;
+const hn=$('s-hostname').value.trim();
+if(!/^[A-Za-z0-9]([A-Za-z0-9-]{0,29}[A-Za-z0-9])?$/.test(hn)){$('s-hostname').classList.add('bad');return er.textContent='hostname: 1..31 letters, digits or hyphens (not at the ends)'}
+b.hostname=hn;const ap=$('s-adminPass').value;
+if(ap&&$('s-clr').checked)return er.textContent='Enter a new password or tick remove, not both';
+if(ap)b.adminPass=ap;if($('s-clr').checked)b.clearAdminPass=true;
+const go=$('s-go');go.disabled=true;
+try{const r=await api('/api/settings',b);fS(applyS(r.settings));if(CC[range])rChart();toast(r.restart?'Saved. Restart the device to apply the new hostname.':'Settings saved')}
+catch(e){er.textContent=e.message}
+go.disabled=false};
+$('s-rf').onclick=function(){act(this,async()=>{await api('/api/refresh',{what:'all'});lr={};toast('Refresh queued')})};
+$('s-cc').onclick=function(){act(this,async()=>{await api('/api/cache/clear',{});CC={};toast('Cache cleared')})};
+/* ---- system ---- */
+const up=s=>{const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return(d?d+'d ':'')+(d||h?h+'h ':'')+m+'m '+(s%60)+'s'};
+function rSys(s){
+const c=s.chip||{},h=s.heap||{},w=s.wifi||{},d=s.data||{},f=s.fs||{};
+dl($('y-dl'),[['Firmware',s.fw||NA],['Chip ID',c.id||NA],['CPU',c.cpuMHz?c.cpuMHz+' MHz':NA],['Flash',c.flashKB?c.flashKB+' KB':NA],['Sketch',c.sketchKB!=null?c.sketchKB+' KB (free '+c.freeSketchKB+' KB)':NA],['SDK',c.sdk||NA],
+['Free heap',h.free!=null?nf(h.free,0)+' B':NA],['Max free block',h.maxBlock!=null?nf(h.maxBlock,0)+' B':NA],['Fragmentation',h.frag!=null?h.frag+'%':NA],['Uptime',up(s.uptime||0)],
+['Wi-Fi',w.connected?w.ssid+' ('+w.rssi+' dBm)':'not connected ('+w.mode+')'],['IP address',w.ip||NA],['mDNS name',w.mdns||NA],
+['Last market update',lt(d.lastMarketOk)],['Last error',d.lastError?d.lastError+' ('+lt(d.lastErrorEpoch)+')':'none']]);
+const p=f.ok&&f.totalKB?Math.round(f.usedKB/f.totalKB*100):0;
+$('y-fst').textContent=f.ok?f.usedKB+' / '+f.totalKB+' KB ('+p+'%)':'unavailable';$('y-fsb').style.width=p+'%';
+$('y-a1').textContent='http://'+(w.mdns||'sp500.local');$('y-a2').textContent=w.ip?'http://'+w.ip:''}
+function typed(w,m){return prompt(m+'\nType '+w+' to confirm:')===w}
+async function act(b,f){b.disabled=true;try{await f()}catch(e){toast(e.message,1)}b.disabled=false}
+async function back(msg){
+hold=1;$('ov').classList.add('on');$('ov-t').textContent=msg;await sl(4000);
+for(let k=0;k<50;k++){try{const r=await fetch('/api/status',{cache:'no-store',signal:AbortSignal.timeout(3000)});if(r.ok){location.reload();return}}catch(e){}await sl(2000)}
+$('ov-t').textContent='The device did not come back. It may have started its setup access point (sp500-setup-XXXXXX, key on the LCD): join it and open http://192.168.4.1. Otherwise check the LCD for the new IP and reload this page.'}
+$('y-rs').onclick=function(){if(!confirm('Restart the device?'))return;act(this,async()=>{await api('/api/system/restart',{});back('Restarting...')})};
+$('y-rst').onclick=function(){if(!typed('RESET','Reset all settings to defaults (Wi-Fi and portfolio are kept)?'))return;act(this,async()=>{await api('/api/system/reset-settings',{confirm:'RESET'});back('Settings reset, restarting...')})};
+$('y-fr').onclick=function(){if(!typed('FACTORY','FACTORY RESET erases everything including Wi-Fi and the portfolio.'))return;act(this,async()=>{await api('/api/system/factory-reset',{confirm:'FACTORY'});back('Factory reset, restarting...')})};
+$('o-go').onclick=()=>{
+const f=$('o-f').files[0],m=$('o-msg'),pb=$('o-pb');m.className='er';
+if(!f)return m.textContent='Choose a .bin file first';
+if(!/\.bin$/i.test(f.name))return m.textContent='File must be a .bin firmware image';
+if(!confirm('Upload '+f.name+' ('+Math.round(f.size/1024)+' KB) and reboot the device?'))return;
+hold=1;$('o-go').disabled=true;m.className='g';m.textContent='Uploading...';pb.style.width='0';
+const fd=new FormData(),x=new XMLHttpRequest();fd.append('firmware',f,f.name);
+x.open('POST','/update');x.upload.onprogress=e=>{if(e.lengthComputable){const p=Math.round(e.loaded/e.total*100);pb.style.width=p+'%';m.textContent='Uploading... '+p+'%'}};
+x.onerror=()=>{hold=0;$('o-go').disabled=false;m.className='er';m.textContent='Upload failed: connection error'};
+x.onload=()=>{if(x.status==200){m.className='ok';m.textContent=x.responseText||'OK';back('Firmware installed, waiting for the device to reboot...')}
+else{hold=0;$('o-go').disabled=false;m.className='er';m.textContent=x.status==401?'Authorization required: sign in as "admin".':(x.responseText||'Upload failed (HTTP '+x.status+')')}};
+x.send(fd)};
+/* ---- routing ---- */
+const EN={market:ldMarketTab,settings:ldSet,wifi:()=>scan(0),details:()=>{}};
+function route(){
+let t=location.hash.slice(1);if(!TABS.includes(t))t='portfolio';cur=t;lr={};
+TABS.forEach(n=>$(n).classList.toggle('on',n==t));
+document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.hash=='#'+t));
+scrollTo(0,0);if(t=='market'&&W!==undefined){sizeCv();draw()}
+if(EN[t])EN[t]();tick()}
+mkfmt();qp($('ixp'),'ix',1);qp($('mqp'),'mq',0);
+{const t=$('a-date'),n=$('a-nat');n.max=todayISO();
+t.addEventListener('input',e=>{let d=t.value.replace(/\D/g,'').slice(0,8),o=d.slice(0,2)+(d.length>2?'/'+d.slice(2,4):'')+(d.length>4?'/'+d.slice(4):'');
+if((e.inputType||'').startsWith('delete'))o=o.replace(/\/$/,'');t.value=o;t.classList.remove('bad');if(o.length==10){const i=d2i(o);if(i)n.value=i;else t.classList.add('bad')}});
+n.addEventListener('change',()=>{if(n.value){t.value=i2d(n.value);t.classList.remove('bad')}});
+$('a-cal').onclick=()=>{const i=d2i(t.value.trim());if(i)n.value=i;try{n.showPicker()}catch(e){n.focus();n.click()}}}
+addEventListener('hashchange',route);route();
+</script>
+</body>
+</html>
