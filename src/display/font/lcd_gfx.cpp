@@ -6,8 +6,10 @@
 // screen stays black even with the backlight on. Subclass begin() to force mode 3
 // — matching the known-good GeekMagic community firmwares.
 #include "lcd_gfx.h"
+#include "../../core/AppTypes.h"   // BL_MIN_PCT / BL_MAX_PCT
 #include <Arduino_GFX_Library.h>
 #include <SPI.h>
+#include <math.h>
 
 // ---- board_esp8266.h: pin map for the GeekMagic SmallTV (ESP-12F) ---------
 // ESP8266 HW-SPI fixed pins: SCLK=GPIO14, MOSI=GPIO13.
@@ -58,14 +60,34 @@ class Arduino_ST7789_LCD : public Arduino_ST7789 {
 static Arduino_DataBus* bus = nullptr;
 static Arduino_GFX*     gfx = nullptr;
 
-Arduino_GFX* lcdDev() { return gfx; }
+// ---- LCD dim ------------------------------------------------------------
+// The SmallTV drives its ST7789 backlight **active-low** from GPIO 5 (D1):
+// duty 0 = full on, 255 = dark. ESP8266 PWM is ~linear in duty and so is an LED
+// string, while the eye is not, so the slider position is squared onto duty:
+// 100 % full, 75 % a little over half, 50 % about a quarter, and BL_MIN_DUTY at
+// the bottom of the slider (never dark). Same curve as the CYD build, which
+// drives its backlight active-high.
+enum { BL_PWM_RANGE = 255, BL_MIN_DUTY = 6, BL_MAX_DUTY = 255 };   // 6/255 = 2.3 %
+static int s_blPct = -1;
+
+void lcdSetBacklight(int pct) {
+  if (pct < (int)BL_MIN_PCT) pct = (int)BL_MIN_PCT;
+  if (pct > (int)BL_MAX_PCT) pct = (int)BL_MAX_PCT;
+  if (pct == s_blPct) return;                    // PWM untouched unless it changed
+  s_blPct = pct;
+  const float t = (float)(pct - (int)BL_MIN_PCT) / (float)((int)BL_MAX_PCT - (int)BL_MIN_PCT);
+  const unsigned on = (unsigned)lroundf((float)BL_MIN_DUTY + (BL_MAX_DUTY - BL_MIN_DUTY) * t * t);
+  analogWrite(TFT_BL, (int)(BL_PWM_RANGE - on));  // active-low: invert on the way out
+  Serial.printf("[gfx] backlight %d%% duty=%u (inverted %d)\n", pct, on, (int)(BL_PWM_RANGE - on));
+}
 
 void lcdBegin() {
   // Backlight FIRST: a dark backlight then means the sketch never got this far.
-  // Active-low (TFT_BL_DEFAULT_INVERTED): duty 0 = full on, 255 = off.
+  // lcdBegin() always starts at full-ish brightness (the level that shipped before
+  // the dim setting existed); setup() applies the stored level once settings load.
   pinMode(TFT_BL, OUTPUT);
-  analogWriteRange(255);
-  analogWrite(TFT_BL, 255 - (90 * 255 / 100));   // brightness 90%
+  analogWriteRange(BL_PWM_RANGE);
+  lcdSetBacklight(90);
 
   bus = new Arduino_HWSPI(TFT_DC, TFT_CS);   // ESP8266 HW-SPI (fixed SCLK/MOSI)
   // IPS=true so the panel colors are not inverted.
@@ -79,3 +101,5 @@ void lcdBegin() {
   gfx->setTextWrap(false);   // overflowing labels must not wrap to the left edge
   gfx->fillScreen(0x0000);  // black, before lcd_ui.h's drawSplash() paints over it
 }
+
+Arduino_GFX* lcdDev() { return gfx; }

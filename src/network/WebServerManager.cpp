@@ -12,6 +12,7 @@
 #include "../core/Format.h"
 #include "../core/MarketClock.h"
 #include "../config/AppConfig.h"
+#include "../display/DisplayManager.h"   // display::setBacklight (LCD dim)
 #include "../finance/ChartData.h"
 #include "../finance/MarketData.h"
 #include "../finance/Portfolio.h"
@@ -540,6 +541,7 @@ static void postSettings() {
   g_app.settings = n;
   if (!storage::saveSettings(n)) { g_app.settings = old; sendErr(500, "saving to flash failed"); return; }
   g_app.effQuoteS = n.quoteRefreshS; g_app.effChartS = n.chartRefreshS; g_app.effPortfolioS = n.portfolioRefreshS;
+  if (old.backlight != n.backlight) display::setBacklight(n.backlight);   // dim applies at once, no restart
   Reply r(200); JsonWriter &w = r.w;
   w.beginObj().kBool("ok", true).kBool("restart", hc || strcmp(old.adminPass, n.adminPass) != 0);
   w.key("settings"); settingsWrite(w, n, false, true);

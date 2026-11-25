@@ -39,6 +39,8 @@ void begin() {
   s_ui.text(1, "starting...", 1, 120, 126, A_CENTER, C_MUTED);
 }
 
+void setBacklight(int pct) { lcdSetBacklight(pct); }   // PWM only, no redraw needed
+
 void showBoot(const char *line) {
   if (!g || s_otaMode) return;
   s_ui.text(1, line, 1, 120, 126, A_CENTER, C_MUTED);

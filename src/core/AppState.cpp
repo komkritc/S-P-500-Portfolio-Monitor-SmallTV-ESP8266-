@@ -9,6 +9,7 @@ void settingsDefaults(Settings &s) {
   s.quoteRefreshS = 60;
   s.chartRefreshS = 300;
   s.pageRotateS = 8;
+  s.backlight = 90;             // the level this firmware shipped with (90 %, active-low PWM on GPIO 5)
   s.defaultRange = RANGE_1D;
   s.charts = 7;                 // 1D, 5D and 1M
   s.pages = 15;                 // all four pages

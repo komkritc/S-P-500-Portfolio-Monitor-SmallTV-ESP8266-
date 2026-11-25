@@ -3,7 +3,8 @@
 #include <string.h>
 #include <stdio.h>
 
-const Limits LIM_PORTFOLIO = {15, 3600}, LIM_QUOTE = {15, 3600}, LIM_CHART = {60, 3600}, LIM_ROTATE = {3, 120}, LIM_OFFSET = {-720, 840}, LIM_PAGES = {1, 15}, LIM_CHARTS = {1, 7};
+const Limits LIM_PORTFOLIO = {15, 3600}, LIM_QUOTE = {15, 3600}, LIM_CHART = {60, 3600}, LIM_ROTATE = {3, 120}, LIM_OFFSET = {-720, 840}, LIM_PAGES = {1, 15}, LIM_CHARTS = {1, 7},
+             LIM_BACKLIGHT = {BL_MIN_PCT, BL_MAX_PCT};
 
 bool validHostname(const char *h) {
   size_t n = strlen(h);
@@ -35,6 +36,8 @@ bool settingsApply(Settings &s, const FlatJson &p, char *err, size_t en, bool *h
   if (pr) n.chartRefreshS = (uint16_t)v;
   if (!getInt(p, "pageRotateS", LIM_ROTATE, v, pr, err, en)) return false;
   if (pr) n.pageRotateS = (uint16_t)v;
+  if (!getInt(p, "backlight", LIM_BACKLIGHT, v, pr, err, en)) return false;   // LCD dim, applied live
+  if (pr) n.backlight = (uint8_t)v;
   if (!getInt(p, "localOffsetMin", LIM_OFFSET, v, pr, err, en)) return false;
   if (pr) n.localOffsetMin = (int16_t)v;
   if (!getInt(p, "pages", LIM_PAGES, v, pr, err, en)) return false;      // bitmask, at least one page must stay on
@@ -90,13 +93,13 @@ static void limit(JsonWriter &w, const char *k, const Limits &l) {
 void settingsWrite(JsonWriter &w, const Settings &s, bool secrets, bool withLimits) {
   w.beginObj();
   w.kInt("portfolioRefreshS", s.portfolioRefreshS).kInt("quoteRefreshS", s.quoteRefreshS).kInt("chartRefreshS", s.chartRefreshS)
-   .kInt("pageRotateS", s.pageRotateS).kInt("pages", s.pages).kInt("charts", s.charts).kStr("defaultRange", rangeName(s.defaultRange))
+   .kInt("pageRotateS", s.pageRotateS).kInt("backlight", s.backlight).kInt("pages", s.pages).kInt("charts", s.charts).kStr("defaultRange", rangeName(s.defaultRange))
    .kStr("tzMode", s.tzMode ? "local" : "exchange").kInt("localOffsetMin", s.localOffsetMin).kStr("hostname", s.hostname);
   if (secrets) w.kStr("adminPass", s.adminPass); else w.kBool("adminPassSet", s.adminPass[0] != 0);
   if (withLimits) {
     w.key("limits").beginObj();
     limit(w, "portfolioRefreshS", LIM_PORTFOLIO); limit(w, "quoteRefreshS", LIM_QUOTE); limit(w, "chartRefreshS", LIM_CHART);
-    limit(w, "pageRotateS", LIM_ROTATE); limit(w, "localOffsetMin", LIM_OFFSET); limit(w, "pages", LIM_PAGES); limit(w, "charts", LIM_CHARTS);
+    limit(w, "pageRotateS", LIM_ROTATE); limit(w, "backlight", LIM_BACKLIGHT); limit(w, "localOffsetMin", LIM_OFFSET); limit(w, "pages", LIM_PAGES); limit(w, "charts", LIM_CHARTS);
     w.endObj();
   }
   w.endObj();
@@ -106,7 +109,7 @@ bool settingsLoadJson(Settings &s, const char *json, size_t len) {
   FlatJson p;
   if (!p.parse(json, len)) return false;
   // Field by field so one bad value does not discard the rest.
-  const char *keys[] = {"portfolioRefreshS", "quoteRefreshS", "chartRefreshS", "pageRotateS", "pages", "charts", "defaultRange", "tzMode", "localOffsetMin", "hostname", "adminPass"};
+  const char *keys[] = {"portfolioRefreshS", "quoteRefreshS", "chartRefreshS", "pageRotateS", "backlight", "pages", "charts", "defaultRange", "tzMode", "localOffsetMin", "hostname", "adminPass"};
   for (const char *k : keys) {
     char buf[200]; char tmp[96];
     int n = snprintf(buf, sizeof buf, "{\"%s\":%s%s%s}", k, p.isStr(k) ? "\"" : "", p.str(k), p.isStr(k) ? "\"" : "");

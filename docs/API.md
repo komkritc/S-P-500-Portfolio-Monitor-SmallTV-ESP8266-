@@ -88,12 +88,14 @@ While `scanning` the previous list (possibly empty) is returned. Poll every ~1.5
 
 ### GET /api/settings
 ```json
-{"portfolioRefreshS":60,"quoteRefreshS":60,"chartRefreshS":300,"pageRotateS":8,
+{"portfolioRefreshS":60,"quoteRefreshS":60,"chartRefreshS":300,"pageRotateS":8,"backlight":90,
  "defaultRange":"1d","tzMode":"exchange","localOffsetMin":420,"hostname":"sp500","adminPassSet":false,
  "limits":{"portfolioRefreshS":[15,3600],"quoteRefreshS":[15,3600],"chartRefreshS":[60,3600],
-           "pageRotateS":[3,120],"localOffsetMin":[-720,840]}}
+           "pageRotateS":[3,120],"localOffsetMin":[-720,840],"backlight":[5,100]}}
 ```
 `pages`: integer bitmask of the LCD pages that rotate, `1` Portfolio, `2` Positions, `4` Market, `8` Realised P/L (default `15` = all). `1..15`; `0` or anything else is rejected with `400 pages must be 1..15`, so at least one page always stays on. The Wi-Fi setup/rescue screen is not affected. `charts`: integer bitmask of the chart ranges the LCD Market page cycles through, `1` 1D, `2` 5D, `4` 1M (default `7` = all), `1..7`, else `400 charts must be 1..7`. It only affects the LCD; the web chart and the background refresh still cover all three ranges. `defaultRange`: `1d`|`5d`|`1mo`. `tzMode`: `exchange` (America/New_York) | `local` (fixed UTC offset `localOffsetMin`, no DST). Bangkok is `local` + `420` (ICT has never observed DST, so a fixed offset is exact); the web UI's **Zone preset** dropdown offers Bangkok, UTC+8, Tokyo/Seoul, India and UTC and fills the offset for you. In `local` mode the zone shown by `/api/market` is `UTC+07:00` while `tzName` stays the instrument's exchange zone - NYSE session hours and the OPEN/CLOSED badge always follow America/New_York rules, never the display zone.
+
+`backlight` (`5..100`, default `90`, added in fw 1.1.6): LCD brightness in percent. POST it on its own and the panel dims straight away - no restart, and the **LCD brightness (%)** slider on the Settings tab does exactly that when you let go of it. The backlight is PWM on GPIO 5 (`analogWrite`, range 255) wired **active-low**: duty 0 is full on and 255 dark, so the level is inverted on the way to the pin. Duty is the slider position squared, because an LED's light output is linear in duty while the eye is not - 50 % is about a quarter of the light. `5 %` is a hard floor (6/255 on the high side), so the panel can never be dimmed past the point where only the web UI could bring it back. The level is kept in `settings.json`, so it survives reboots and OTA updates; a settings file from before 1.1.6 simply keeps `90`.
 
 ### GET /api/positions/job
 State of the last "add position" request: `{"state":"idle|pending|ok|error","error":"","symbol":"^GSPC","updated":false}`.

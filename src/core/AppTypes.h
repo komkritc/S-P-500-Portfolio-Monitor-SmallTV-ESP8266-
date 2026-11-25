@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <math.h>
 
-#define FW_VERSION "1.1.3"
+#define FW_VERSION "1.1.6"
 #define SP500_SYMBOL "^GSPC"
 
 static const uint8_t  MAX_POSITIONS = 12;   // open lots; trimmed from 24 to fit the sale ledger in RAM
@@ -118,11 +118,18 @@ struct ChartStats {
   double first, last, base, change, changePct, minV, maxV;
 };
 
+// LCD backlight bounds (percent). 5 % is the floor, not 0: the SmallTV's ST7789
+// backlight is driven active-low from GPIO 5, so the panel can never be dimmed
+// past the point where only the web UI could bring it back, and the bottom of
+// the slider always changes something.
+constexpr int32_t BL_MIN_PCT = 5, BL_MAX_PCT = 100;
+
 struct Settings {
   uint16_t portfolioRefreshS;
   uint16_t quoteRefreshS;
   uint16_t chartRefreshS;
   uint16_t pageRotateS;
+  uint8_t  backlight;         // LCD backlight percent (BL_MIN_PCT..BL_MAX_PCT, see above)
   uint8_t  defaultRange;      // ChartRange
   uint8_t  charts;            // chart ranges the LCD Market page cycles through: bit0 1D, bit1 5D, bit2 1M (default 7)
   uint8_t  pages;             // LCD pages in the rotation: bit0 Portfolio, bit1 Positions, bit2 Market, bit3 Realised P/L (default 15)

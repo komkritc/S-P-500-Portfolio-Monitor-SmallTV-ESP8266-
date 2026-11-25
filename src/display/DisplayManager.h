@@ -6,6 +6,7 @@
 
 namespace display {
 void begin();                             // panel bring-up (SPI mode 3, backlight) + splash
+void setBacklight(int pct);               // LCD dim (BL_MIN_PCT..BL_MAX_PCT), live, no restart
 void loop(const AppState &a);             // call every loop(); repaints only what changed
 void invalidate();                        // next loop() repaints the whole screen
 void showOta(const char *source);         // firmware update screen (loop() paints nothing while active)

@@ -423,7 +423,7 @@ static void testPortfolio() {
 static bool applyS(Settings &s, const char *j, std::string *err = nullptr) { char e[80]; bool hc; bool ok = settingsApplyJson(s, j, strlen(j), e, sizeof e, &hc); if (err) *err = e; return ok; }
 static void testSettings() {
   Settings s; settingsDefaults(s); std::string e;
-  CHECK(s.portfolioRefreshS == 60 && s.chartRefreshS == 300 && s.pageRotateS == 8 && s.defaultRange == RANGE_1D && !strcmp(s.hostname, "sp500"));
+  CHECK(s.portfolioRefreshS == 60 && s.chartRefreshS == 300 && s.pageRotateS == 8 && s.backlight == 90 && s.defaultRange == RANGE_1D && !strcmp(s.hostname, "sp500"));
   CHECK(applyS(s, "{\"quoteRefreshS\":30,\"defaultRange\":\"5d\",\"tzMode\":\"local\",\"localOffsetMin\":-300,\"hostname\":\"my-tv\"}") && s.quoteRefreshS == 30 && s.defaultRange == RANGE_5D && s.tzMode == 1 && s.localOffsetMin == -300 && !strcmp(s.hostname, "my-tv"));
   CHECK(!applyS(s, "{\"quoteRefreshS\":14}", &e) && e == "quoteRefreshS must be 15..3600");
   CHECK(!applyS(s, "{\"quoteRefreshS\":3601}")); CHECK(!applyS(s, "{\"quoteRefreshS\":\"30\"}")); CHECK(!applyS(s, "{\"quoteRefreshS\":30.5}")); CHECK(!applyS(s, "{\"quoteRefreshS\":1e2}"));
@@ -444,8 +444,21 @@ static void testSettings() {
     CHECK(co.find("\"charts\":5") != std::string::npos && co.find("\"charts\":[1,7]") != std::string::npos);
     Settings r3; settingsDefaults(r3); std::string cf; { JsonWriter w(sinkStr, &cf); settingsWrite(w, q, true, false); }
     CHECK(settingsLoadJson(r3, cf.data(), cf.size()) && r3.charts == 5);
+    // LCD dim (fw 1.1.6): percent, web-set, applied live - never 0 (a black panel
+    // could only be recovered over Wi-Fi). Default 90 % is what this firmware shipped with.
+    Settings bl; settingsDefaults(bl); CHECK(bl.backlight == 90);
+    std::string be; CHECK(!applyS(bl, "{\"backlight\":0}", &be) && be == "backlight must be 5..100" && bl.backlight == 90);
+    CHECK(!applyS(bl, "{\"backlight\":4}")); CHECK(!applyS(bl, "{\"backlight\":101}")); CHECK(!applyS(bl, "{\"backlight\":\"60\"}")); CHECK(!applyS(bl, "{\"backlight\":60.5}"));
+    CHECK(applyS(bl, "{\"backlight\":5}") && bl.backlight == 5); CHECK(applyS(bl, "{\"backlight\":100}") && bl.backlight == 100);
+    CHECK(applyS(bl, "{\"backlight\":35}") && bl.backlight == 35);
+    std::string bapi; { JsonWriter w(sinkStr, &bapi); settingsWrite(w, bl, false, true); }
+    CHECK(bapi.find("\"backlight\":35") != std::string::npos && bapi.find("\"backlight\":[5,100]") != std::string::npos);   // value + limits on the API
+    Settings br; settingsDefaults(br); std::string bfl; { JsonWriter w(sinkStr, &bfl); settingsWrite(w, bl, true, false); }
+    CHECK(settingsLoadJson(br, bfl.data(), bfl.size()) && br.backlight == 35);                                       // survives the flash round trip
+    CHECK(settingsLoadJson(br, "{\"backlight\":0}", 15) && br.backlight == 35);                                     // a bad stored value keeps the last good one
+    CHECK(settingsLoadJson(br, "{\"backlight\":\"60\"}", 18) && br.backlight == 35);                                // wrong type likewise
     Settings old; settingsDefaults(old); const char *legacy = "{\"quoteRefreshS\":30}";                           // a settings file from before v1.1.2 has no pages
-    CHECK(settingsLoadJson(old, legacy, strlen(legacy)) && old.pages == 15); }
+    CHECK(settingsLoadJson(old, legacy, strlen(legacy)) && old.pages == 15 && old.backlight == 90); }
   CHECK(!applyS(s, "{\"defaultRange\":\"1y\"}")); CHECK(!applyS(s, "{\"tzMode\":\"mars\"}")); CHECK(!applyS(s, "{\"tzMode\":1}"));
   CHECK(!applyS(s, "{\"hostname\":\"Bad_Host\"}")); CHECK(!applyS(s, "{\"hostname\":\"-x\"}")); CHECK(!applyS(s, "{\"hostname\":\"\"}")); CHECK(!applyS(s, "{\"hostname\":\"a1234567890123456789012x\"}"));
   CHECK(!applyS(s, "not json")); CHECK(!applyS(s, "{\"a\":")); CHECK(!applyS(s, "[1]"));

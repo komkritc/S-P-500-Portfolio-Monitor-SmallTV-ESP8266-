@@ -5,7 +5,7 @@
 #include "../core/FlatJson.h"
 
 struct Limits { int32_t lo, hi; };
-extern const Limits LIM_PORTFOLIO, LIM_QUOTE, LIM_CHART, LIM_ROTATE, LIM_OFFSET, LIM_PAGES, LIM_CHARTS;
+extern const Limits LIM_PORTFOLIO, LIM_QUOTE, LIM_CHART, LIM_ROTATE, LIM_OFFSET, LIM_PAGES, LIM_CHARTS, LIM_BACKLIGHT;
 
 // Applies a settings patch (any subset of the API fields). All-or-nothing: on any error `s` is
 // untouched and `err` holds a message. adminPass "" = unchanged; clearAdminPass:true removes it.

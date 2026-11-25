@@ -47,7 +47,7 @@ Ported from `sp500.ino` (ESP32/TFT_eSPI): same position model (`symbol, qty, buy
 
 ## Status - read this first
 
-Firmware **v1.1.3**. Hardware-verified items are marked below; everything else is host-tested only.
+Firmware **v1.1.6**. Hardware-verified items are marked below; everything else is host-tested only.
 
 
 | Area | State |
@@ -55,9 +55,10 @@ Firmware **v1.1.3**. Hardware-verified items are marked below; everything else i
 | Firmware builds, flashes, boots | **Verified on a real device** (USB serial, currently COM6) |
 | Wi-Fi join, mDNS, NTP | **Verified on device** (joined, `sp500.local` announced) |
 | Live Yahoo ^GSPC quote + 1D/5D/1M charts, TLS, memory | **Verified on device** (see *Memory*) |
-| Portfolio maths | Host-tested (729 checks) **and** the on-device NAV/P&L matches an independent calculation |
+| Portfolio maths | Host-tested (778 checks) **and** the on-device NAV/P&L matches an independent calculation |
 | Sale ledger (sell / undo / delete / history / CSV, realised + lifetime P/L) | Host-tested (128 sale-engine checks). **Verified on device (v1.1.1):** preview, confirm (manual and Yahoo-close price), undo, delete, history and CSV, with no reset. Power-loss recovery of the ledger is **not** exercised on hardware |
-| LCD layout | Rendered on the host with the real font renderer (68 frames incl. the realised page, 0 overflow/overlap). **The physical LCD was not looked at** |
+| LCD layout | Rendered on the host with the real font renderer (77 frames incl. the realised page, 0 overflow/overlap). **The physical LCD was not photographed** |
+| LCD brightness (dim) | Host-tested bounds, API output and persistence (settings round trip). The PWM itself is `analogWrite` on GPIO 5, active-low; **how dim it looks is judged by eye on the panel** |
 | Web dashboard | Browser-tested against a mock server (desktop + 390 px mobile) **and** opened from the real device (portfolio, sales, theme toggle, sell flow) |
 | OTA upload | **Verified on device** (repeated flashes with `pio run -t upload --upload-port <ip>`) |
 | Rescue AP, captive portal, router-restart recovery, wrong password, settings persistence across reboot | Implemented, **not yet exercised on hardware** |
@@ -101,6 +102,7 @@ python tools/serial_log.py COM6 60 --reset     # watch the boot log
 * **LCD pages** (auto-rotating, dots show the page): 1 Portfolio (NAV, unrealised P/L THB and %, invested, positions, S&P ticker; realised and lifetime P/L are not on this page), 2 Positions (2 rows per screen, every row reachable, totals, S&P ticker), 3 Market (price, change, status, 1D -> 5D -> 1M charts, O/H/L/Prev or 1M change), 4 Realised P/L (all-time, this year, sales, reversed, last sale) - page 4 is always in the rotation (it shows 0.00 and "no sales yet" until the first sale). The `^GSPC` ticker stays on pages 1-2.
 * **Choosing LCD pages:** Settings tab -> *LCD pages to show* (1 Portfolio, 2 Positions, 3 Market, 4 Realised P/L). The rotation and the header dots follow your choice at once, no reboot. At least one page must stay ticked; the Wi-Fi setup screen is always available. *Market page charts* (1D / 5D / 1M) picks which chart ranges page 3 cycles through; it changes only the LCD, the web chart still offers all three.
 * **Time zone:** Settings tab -> *Time zone* -> *Zone preset*. `exchange` (default) shows every time - LCD and web - in America/New_York with real EST/EDT rules; `local` shows your own fixed UTC offset instead (`UTC offset (minutes)`, e.g. `420` for Thailand). The preset dropdown fills the offset for you: Bangkok/Thailand (ICT, UTC+7), Singapore/KL/HK/Taipei/Beijing (UTC+8), Tokyo/Seoul (UTC+9), India (IST, UTC+5:30) or UTC. None of those zones observe DST, so a fixed offset is exact. Market status, the OPEN/CLOSED badge and the chart day boundaries always follow New York rules, whichever zone you pick.
+* **LCD brightness:** Settings tab -> *LCD brightness (%)*. Drag and release, and the panel dims at once - no Save, no reboot, and the level is kept in flash so it comes back after a reboot or an OTA update. `5..100`, default `90` (the level earlier builds used). GPIO 5 PWM, active-low, slider position squared onto duty, `5 %` is a hard floor so the screen can never be dimmed dark for good.
 * **Web** `http://sp500.local`: Portfolio, Market (interactive chart, 1D/5D/1M), Details (sortable table, add/delete positions), **Sales** (realised summary with all-time and this-year totals, sell form with preview/confirm, transaction history with undo and CSV export), Wi-Fi, Settings, System (diagnostics, restart, resets, OTA). The date field takes **dd/mm/yyyy** with a calendar button; the API itself uses ISO `yyyy-mm-dd`.
 * **Adding a position:** symbol, purchase date, THB amount. The device fetches the close on that date (last bar *on or before* it for weekends/holidays; never a later bar) and stores `qty = THB / close`. Or enter quantity + buy price directly.
 * **Selling:** pick the symbol, date, method (FIFO oldest lot first, or one specific lot) and either a quantity, a THB amount or "entire holding". Without an execution price the device fetches the close on that date. *Preview* shows the exact lots, the cost basis and the realised P/L; only *Confirm and commit* writes. *Undo* appends a reversal - the sale stays in the history, and the position (including a fully sold lot) comes back. *Delete* removes a transaction from the history for good (a sale and its undo go together; an active sale is undone first). Export the CSV first if you want a copy.

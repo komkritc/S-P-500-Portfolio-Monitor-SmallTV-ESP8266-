@@ -40,6 +40,7 @@ void setup() {
   storage::begin();
   HEAP("littlefs");
   storage::loadSettings(g_app.settings);
+  display::setBacklight(g_app.settings.backlight);   // stored dim level, once settings are readable
   g_app.posCount = storage::loadPortfolio(g_app);
   storage::ledgerBoot(g_app);              // replay /sells.jsonl into the positions + realised totals
   bookSync(g_app.book, g_app.positions, g_app.posCount);

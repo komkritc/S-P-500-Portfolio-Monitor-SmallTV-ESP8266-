@@ -70,6 +70,8 @@ tfoot td,tr.tot td{font-weight:700;border-top:1px solid var(--bd2);border-bottom
 .fg{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px 14px;margin-bottom:12px}
 label{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
 input,select{display:block;width:100%;margin-top:4px;background:var(--hdr);border:1px solid var(--bd);border-radius:6px;padding:8px 10px;color:var(--fg);font:inherit;text-transform:none;letter-spacing:0}
+input[type=range]{padding:0;height:34px;accent-color:var(--acc);cursor:pointer}
+output.blv{display:block;margin-top:4px;font-size:12px;color:var(--muted);text-transform:none;letter-spacing:0}
 input:focus,select:focus{outline:none;border-color:var(--acc)}
 input.bad{border-color:var(--down)}
 input[type=checkbox]{display:inline-block;width:auto;margin:0 6px 0 0;vertical-align:middle}
@@ -229,6 +231,7 @@ If the device cannot join your Wi-Fi (or has no saved network) it starts its own
 <label>Quote refresh (s)<input id="s-quoteRefreshS" type="number"></label>
 <label>Chart refresh (s)<input id="s-chartRefreshS" type="number"></label>
 <label>Page rotate (s)<input id="s-pageRotateS" type="number"></label>
+<label>LCD brightness (%)<input id="s-backlight" type="range" min="5" max="100" step="1"><output class="blv" id="s-blv"></output></label>
 <div class="pg"><span class="l2">LCD pages to show</span><label><input type="checkbox" class="pgc" data-b="1"> 1 Portfolio</label><label><input type="checkbox" class="pgc" data-b="2"> 2 Positions</label><label><input type="checkbox" class="pgc" data-b="4"> 3 Market</label><label><input type="checkbox" class="pgc" data-b="8"> 4 Realised P/L</label></div>
 <div class="pg"><span class="l2">Market page charts</span><label><input type="checkbox" class="chc" data-b="1"> 1D</label><label><input type="checkbox" class="chc" data-b="2"> 5D</label><label><input type="checkbox" class="chc" data-b="4"> 1M</label></div>
 <label>Default chart range<select id="s-defaultRange"><option value="1d">1D</option><option value="5d">5D</option><option value="1mo">1M</option></select></label>
@@ -609,17 +612,23 @@ wbusy=0;go.disabled=false};
 $('w-rc').onclick=function(){act(this,async()=>{await api('/api/wifi/reconnect',{});toast('Reconnecting...')})};
 $('w-fg').onclick=function(){if(!typed('FORGET','Forget the saved Wi-Fi network? The device will start its setup access point.'))return;act(this,async()=>{await api('/api/wifi/forget',{confirm:'FORGET'});toast('Saved network removed');wbusy=0})};
 /* ---- settings ---- */
-const NK=['portfolioRefreshS','quoteRefreshS','chartRefreshS','pageRotateS','localOffsetMin'];
+const NK=['portfolioRefreshS','quoteRefreshS','chartRefreshS','pageRotateS','backlight','localOffsetMin'];
 function fS(s){
 NK.forEach(k=>{const i=$('s-'+k);i.value=s[k];if(s.limits&&s.limits[k]){i.min=s.limits[k][0];i.max=s.limits[k][1];i.title='Allowed: '+s.limits[k][0]+'..'+s.limits[k][1]}});
 document.querySelectorAll('.pgc').forEach(c=>c.checked=!!((s.pages==null?15:s.pages)&+c.dataset.b));document.querySelectorAll('.chc').forEach(c=>c.checked=!!((s.charts==null?7:s.charts)&+c.dataset.b));$('s-defaultRange').value=s.defaultRange;$('s-tzMode').value=s.tzMode;$('s-hostname').value=s.hostname;
-$('s-adminPass').value='';$('s-clr').checked=false;$('s-aps').textContent=s.adminPassSet?'An admin password is set.':'No admin password set (open access).';tzv()}
+$('s-adminPass').value='';$('s-clr').checked=false;$('s-aps').textContent=s.adminPassSet?'An admin password is set.':'No admin password set (open access).';tzv();blv()}
 const tzv=()=>{const l=$('s-tzMode').value=='local';$('s-off').style.display=l?'':'none';
 const v=+$('s-localOffsetMin').value;const m=l?TZP.find(z=>z==v):undefined;$('s-tzPreset').value=m===undefined?'':String(m);};
 // fixed-offset zones offered as presets; none of them observe DST, so a minute
 // offset is exact. Keep this list in sync with the <option> values in #s-tzPreset.
 const TZP=[420,480,540,330,0];
 $('s-tzMode').onchange=tzv;$('s-localOffsetMin').onchange=tzv;
+// LCD dim: the read-out follows the slider, and releasing it applies the level at
+// once (a partial settings patch - no Save needed, no restart).
+function blv(){const i=$('s-backlight');$('s-blv').textContent='Backlight '+i.value+' %'}
+$('s-backlight').oninput=blv;
+$('s-backlight').onchange=()=>{blv();const v=+$('s-backlight').value;
+  api('/api/settings',{backlight:v}).then(()=>toast('LCD brightness '+v+' %')).catch(e=>toast('Brightness not applied: '+e.message,1))};
 $('s-tzPreset').onchange=()=>{const v=$('s-tzPreset').value;if(v==='')return;
 $('s-tzMode').value='local';$('s-localOffsetMin').value=v;tzv()};
 async function ldSet(){try{fS(applyS(await api('/api/settings')))}catch(e){$('s-err').textContent=e.message}}
