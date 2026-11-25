@@ -29,6 +29,9 @@ void appInit(AppState &a) {
     off += RANGE_CAP[r];
     a.charts[r].base = NAN;
   }
+  // Candles exist for 1M only; every other chart keeps w = null (appInit memsets it), so callers
+  // can test c.w instead of range constants.
+  a.charts[RANGE_1M].w = a.chartW;
   a.sp.last = a.sp.prevClose = a.sp.open = a.sp.high = a.sp.low = NAN;
   a.summary.realisedPl = a.summary.lifetimePl = NAN;
   a.effPortfolioS = a.settings.portfolioRefreshS;

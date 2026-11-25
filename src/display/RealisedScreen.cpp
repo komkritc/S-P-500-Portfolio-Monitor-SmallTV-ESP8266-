@@ -47,7 +47,7 @@ void drawRealised(Ui &u, const AppState &a, bool full) {
     return;
   }
   // A readable ledger with no sales is a known 0 (shown as such), not N/A.
-  fmtThbSigned(b, sizeof b, s.pl);
+  fmtThbSigned(b, sizeof b, s.pl, 0);   // realised P/L in whole baht, like the rest of the headline money
   static const uint8_t bigSz[] = {3, 2, 1};
   u.fit(2, b, bigSz, 3, 224, 8, 43, A_LEFT, signColor(s.pl));
 
@@ -63,7 +63,7 @@ void drawRealised(Ui &u, const AppState &a, bool full) {
   snprintf(l3, sizeof l3, cy ? "THIS YEAR %d" : "THIS YEAR N/A", cy);
   u.text(3, l3, 1, 16, 84, A_LEFT, C_MUTED, C_PANEL);
   const double ypl = yearPl(s, cy);
-  fmtThbSigned(b, sizeof b, ypl);
+  fmtThbSigned(b, sizeof b, ypl, 0);
   static const uint8_t ySz[] = {2, 1};
   u.fit(4, b, ySz, 2, 208, 16, 99, A_LEFT, signColor(ypl), C_PANEL);
 
@@ -89,7 +89,7 @@ void drawRealised(Ui &u, const AppState &a, bool full) {
   u.text(18, b, 1, 232, 175, A_RIGHT, C_MUTED);
   static const uint8_t symSz[] = {2, 1}, valSz[] = {2, 1};
   u.fit(19, s.lastSymbol, symSz, 2, 120, 8, 191, A_LEFT, C_TEXT);
-  fmtThbSigned(b, sizeof b, s.lastRealised);
+  fmtThbSigned(b, sizeof b, s.lastRealised, 0);
   u.fit(9, b, valSz, 2, 108, 232, 191, A_RIGHT, signColor(s.lastRealised));
 }
 

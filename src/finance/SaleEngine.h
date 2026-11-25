@@ -44,6 +44,10 @@ void scan(LineSrc &src, RecordFn fn, void *ctx, ScanStats &st);
 bool   parseRecord(const char *line, size_t len, SaleRecord &out);
 void   writeRecord(JsonWriter &w, const SaleRecord &r);                 // one object, no newline
 size_t recordLine(const SaleRecord &r, char *buf, size_t cap);          // JSON + NUL, 0 = too small
+// One CSV export row for `r` (no ledger scan): header columns are documented in docs/API.md.
+// `out` must be >= 832 B - sized for the worst realistic record (12 allocations x "65535*1234567890.12345678@654321.123456"
+// ~ 41 B each + fixed fields ~ 300 B). Returns bytes written, 0 on failure; never spills past cap.
+size_t csvLineStr(const SaleRecord &r, bool reversed, char *out, size_t cap);
 
 // ---------------------------------------------------------------- allocation & preview
 // Binds a preview to the portfolio + ledger state it was computed from (confirm must match).

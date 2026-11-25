@@ -36,7 +36,7 @@ struct Slot {
   bool     used;
 };
 
-static const uint8_t MAX_SLOTS = 40;
+static const uint8_t MAX_SLOTS = 41;
 
 struct Rect { int16_t x, y, w, h; };
 

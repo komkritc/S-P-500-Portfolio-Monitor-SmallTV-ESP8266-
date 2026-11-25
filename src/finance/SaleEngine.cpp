@@ -205,6 +205,43 @@ size_t recordLine(const SaleRecord &r, char *buf, size_t cap) {
   return s.len;
 }
 
+// ---------------------------------------------------------------- CSV export line
+// One CSV row for `r` (header: see SaleStore::saleCsv). Sized for the worst realistic record:
+// 12 allocations x "65535*1234567890.12345678@654321.123456" (~41 B each) + fixed fields (~300 B)
+// fits in the 832 B the caller passes. If the allocations section still overflows (only possible
+// via hand-crafted 1e300-scale numbers), it gets a visible "..." marker instead of a silent cut.
+// Kept in the engine (not the store) so the host tests exercise the exact same code as the device.
+size_t csvLineStr(const SaleRecord &r, bool reversed, char *out, size_t cap) {
+  char lots[512];
+  size_t lo = 0;
+  lots[0] = 0;
+  bool clipped = false;
+  for (uint8_t i = 0; i < r.nAlloc && i < MAX_LOT_ALLOCS; i++) {
+    const LotAlloc &a = r.alloc[i];
+    double sold = r.type == REC_SALE ? a.before - a.after : a.after - a.before;
+    int n = snprintf(lots + lo, sizeof lots - lo, "%s%u*%.8f@%.6f", i ? " " : "", (unsigned)a.lot, sold, a.buy);
+    if (n < 0 || (size_t)n >= sizeof lots - lo) { clipped = true; break; }
+    lo += (size_t)n;
+  }
+  if (clipped && lo + 3 < sizeof lots) { lots[lo++] = '.'; lots[lo++] = '.'; lots[lo++] = '.'; lots[lo] = 0; }
+  char refPx[32];
+  if (isNum(r.refPrice)) snprintf(refPx, sizeof refPx, "%.6f", r.refPrice);
+  else refPx[0] = 0;                                    // unknown -> empty, never 0
+  int n = snprintf(out, cap,
+                   "%lu,\"%s\",%s,%s,%lu,\"%s\",\"%s\",%.8f,%.6f,%s,%s,%.4f,%.6f,%.6f,%.6f,%.6f,%lu,\"%s\",\"%s\"\n",
+                   (unsigned long)r.seq, r.id,
+                   r.type == REC_SALE ? "sale" : "reversal",
+                   r.type == REC_REVERSAL ? "reversal" : (reversed ? "reversed" : "valid"),
+                   (unsigned long)r.ts, r.symbol, r.date, r.qty, r.price,
+                   refPx,
+                   r.priceSource == PRICE_YAHOO ? "yahoo" : "manual",
+                   r.fee, r.gross, r.net, r.cost, r.realised,
+                   (unsigned long)r.refSeq, r.refId, lots);
+  if (n < 0) return 0;
+  if ((size_t)n >= cap) return cap - 1;                 // truncation kept visible, never a spill
+  return (size_t)n;
+}
+
 // ---------------------------------------------------------------- ledger iteration
 void scan(LineSrc &src, RecordFn fn, void *ctx, ScanStats &st) {
   memset(&st, 0, sizeof st);
@@ -320,6 +357,20 @@ bool preview(const Position *pos, uint8_t n, const PortfolioMeta &m, const SaleR
     if (lot->qty < qty - EPS * (lot->qty > 1 ? lot->qty : 1)) return failf(pv, S_LIT("lot has only %.8g"), lot->qty);
     addAlloc(pv, *lot, qty);
   } else if (req.method == SALE_FIFO) {
+    // True FIFO: consume the oldest purchase date first, regardless of the order the lots were
+    // added to the portfolio. ISO dates compare lexicographically; ties break on lot id
+    // (insertion order). Legacy lots without a date ("") sort oldest, so they stay sellable.
+    // Insertion sort: c <= MAX_POSITIONS (12), so it is cheap, and the id tie-break keeps it stable.
+    for (uint8_t i = 1; i < c; i++) {
+      uint16_t key = lots[i];
+      int8_t j = (int8_t)i - 1;
+      while (j >= 0) {
+        const Position &a = pos[lots[j]], &b = pos[key];
+        int cmp = strcmp(a.date, b.date);
+        if (cmp > 0 || (cmp == 0 && a.id > b.id)) { lots[j + 1] = lots[j]; j--; } else break;
+      }
+      lots[j + 1] = key;
+    }
     double need = qty;
     for (uint8_t k = 0; k < c && need > 0; k++) {
       const Position &lot = pos[lots[k]];
@@ -629,7 +680,7 @@ RecoverResult recover(Position *pos, uint8_t &n, PortfolioMeta &m, RealisedSumma
 
 uint8_t statusOf(const SaleRecord &r, bool reversed) {
   if (r.type == REC_REVERSAL) return REC_REVERSAL;
-  return reversed ? SALE_ST_REVERSED : REC_SALE;
+  return reversed ? (uint8_t)SALE_ST_REVERSED : (uint8_t)REC_SALE;
 }
 
 }  // namespace sale

@@ -26,6 +26,12 @@ static int g_fail = 0, g_pass = 0;
 static uint32_t U(int y, int m, int d, int hh = 0, int mm = 0) { return utcMidnight(y, m, d) + hh * 3600 + mm * 60; }
 static std::string F(double v, int dec, SignMode s) { char b[40]; fmtNum(b, sizeof b, v, dec, s); return b; }
 static std::string fn(bool (*f)(char *, size_t, double), double v) { char b[48]; f(b, sizeof b, v); return b; }
+// fmtThb gained a decimals count in 1.2.5; a default argument does not apply through a function
+// pointer, so it gets its own wrappers instead of sharing fn().
+static std::string thb2(double v) { char b[48]; fmtThb(b, sizeof b, v); return b; }
+static std::string thbd(double v, uint8_t d) { char b[48]; fmtThb(b, sizeof b, v, d); return b; }
+static std::string thbs2(double v) { char b[48]; fmtThbSigned(b, sizeof b, v); return b; }
+static std::string thbs0(double v) { char b[48]; fmtThbSigned(b, sizeof b, v, 0); return b; }
 
 static std::string readFile(const char *p) {
   FILE *f = fopen(p, "rb"); if (!f) { printf("cannot open %s\n", p); exit(2); }
@@ -115,12 +121,34 @@ static void testFormat() {
   CHECK_STR(F(5e12, 2, SIGN_NONE), "N/A");
   CHECK_STR(F(12, 0, SIGN_NONE), "12");
   CHECK_STR(F(0.12345, 4, SIGN_NONE), "0.1235");
-  CHECK_STR(fn(fmtThb, 268500), "THB 268,500.00");
-  CHECK_STR(fn(fmtThb, -5200), "-THB 5,200.00");
-  CHECK_STR(fn(fmtThbSigned, 18500), "+THB 18,500.00");
-  CHECK_STR(fn(fmtThbSigned, -5200), "-THB 5,200.00");
-  CHECK_STR(fn(fmtThbSigned, 0), "THB 0.00");
-  CHECK_STR(fn(fmtThb, NAN), "N/A");
+  CHECK_STR(thb2(268500), "THB 268,500.00");
+  CHECK_STR(thb2(-5200), "-THB 5,200.00");
+  CHECK_STR(thbs2(18500), "+THB 18,500.00");
+  CHECK_STR(thbs2(-5200), "-THB 5,200.00");
+  CHECK_STR(thbs2(0), "THB 0.00");
+  CHECK_STR(thb2(NAN), "N/A");
+  // invested capital is shown in whole baht (fw 1.2.5); every other money figure keeps cents
+  CHECK_STR(thbd(600000, 0), "THB 600,000");
+  CHECK_STR(thbd(0, 0), "THB 0");
+  CHECK_STR(thbd(-5200, 0), "-THB 5,200");
+  CHECK_STR(thbd(268500.49, 0), "THB 268,500");            // rounds down, as cents do
+  CHECK_STR(thbd(268500.5, 0), "THB 268,501");             // half-up, same rule as 2 dp
+  CHECK_STR(thbd(999.5, 0), "THB 1,000");                  // carries into the thousands
+  CHECK_STR(thbd(999999999999.0, 0), "THB 999,999,999,999");
+  CHECK_STR(thbd(NAN, 0), "N/A");
+  CHECK_STR(thbd(600000, 2), "THB 600,000.00");            // explicit cents unchanged
+  CHECK_STR(thbd(570637.06, 0), "THB 570,637");            // the NAV figure as it reaches the screen
+  CHECK_STR(thbd(570637.99, 0), "THB 570,638");            // cents still round the whole-baht value
+  CHECK_STR(thb2(600000), "THB 600,000.00");               // and via the default argument
+  // P/L is shown in whole baht too (fw 1.2.7), signed
+  CHECK_STR(thbs0(-30270.32), "-THB 30,270");              // the live unrealised P/L, as displayed
+  CHECK_STR(thbs0(18500), "+THB 18,500");
+  CHECK_STR(thbs0(-5200), "-THB 5,200");
+  CHECK_STR(thbs0(0), "THB 0");
+  CHECK_STR(thbs0(-0.4), "THB 0");                        // a sub-baht loss rounds to 0, and 0 has no sign
+  CHECK_STR(thbs0(-29362.94), "-THB 29,363");             // rounds away, not truncated
+  CHECK_STR(thbs0(NAN), "N/A");
+  CHECK_STR(thbs2(-30270.32), "-THB 30,270.32");          // cents path still available (per-position rows)
   CHECK_STR(fn(fmtPct, 7.4), "+7.40%");
   CHECK_STR(fn(fmtPct, -2.1), "-2.10%");
   CHECK_STR(fn(fmtPct, NAN), "N/A");
@@ -602,6 +630,11 @@ static void testPickClose() {
   { uint32_t t2[2] = {U(2026, 11, 20, 14, 30), U(2026, 11, 23, 14, 30)}; float v2[2] = {7, 8};
     CHECK(pickCloseOnDate(t2, v2, 2, 2026, 11, 22, px, &ex) && px == 7 && !ex); }         // weekend between bars: NOT the bar after the date
   { float z[2] = {0, 0}; uint32_t t2[2] = {1, 2}; CHECK(!pickCloseOnDate(t2, z, 2, 2026, 11, 22, px)); CHECK(!pickCloseOnDate(t2, z, 0, 2026, 11, 22, px)); }
+  // barTs names the bar the price was taken from: the add-position confirm has to show the session it
+  // borrowed when the purchase date itself had no session.
+  uint32_t bt = 0;
+  CHECK(pickCloseOnDate(t, v, 5, 2026, 11, 18, px, &ex, EXCHANGE_NY, &bt) && px == 102 && ex && bt == t[2]);
+  CHECK(pickCloseOnDate(t, v, 5, 2026, 11, 22, px, &ex, EXCHANGE_NY, &bt) && px == 104 && !ex && bt == t[4]);
   // non-US exchange: Tokyo bars stamped 09:00 JST (= 00:00 UTC) belong to the Tokyo date, not the previous ET date
   { uint32_t tk[2] = {U(2026, 11, 19, 0, 0), U(2026, 11, 20, 0, 0)}; float vk[2] = {10, 11};
     CHECK(pickCloseOnDate(tk, vk, 2, 2026, 11, 20, px, &ex, 9 * 3600) && px == 11 && ex);
@@ -610,9 +643,109 @@ static void testPickClose() {
   { uint32_t t3[1] = {U(2026, 11, 19, 1, 0)}; float v3[1] = {55}; CHECK(pickCloseOnDate(t3, v3, 1, 2026, 11, 18, px, &ex) && ex); }
 }
 
+// ---------------------------------------------------------------- candles (fw 1.2.3)
+// The packing is the whole point of the 8266 design: three int16 per bar instead of three floats.
+// These checks pin the window, the rounding, the null marker, and - most importantly - that a
+// candle can never end up attached to the wrong bar.
+static void testCandles(const char *dir) {
+  CHECK_NEAR(ohlcUnpack(ohlcPack(6000.0f)), 6000.0f, 1e-5);
+  CHECK_NEAR(ohlcUnpack(ohlcPack(6000.13f)), 6000.25f, 1e-5);      // nearest quarter point (0.12 away, not 0.13)
+  CHECK_NEAR(ohlcUnpack(ohlcPack(5999.99f)), 6000.0f, 1e-5);
+  CHECK_NEAR(ohlcUnpack(ohlcPack(10000.0f)), 10000.0f, 1e-5);       // far above today's level, inside
+  CHECK_NEAR(ohlcUnpack(ohlcPack(OHLC_PX0 + 32767.0f * OHLC_Q)), 10239.75f, 1e-4);   // top of window
+  CHECK(ohlcPack(NAN) == OHLC_BAD && ohlcPack(0.0f) == OHLC_BAD && ohlcPack(-1.0f) == OHLC_BAD);
+  CHECK(ohlcPack(2047.99f) == OHLC_BAD && ohlcPack(1e12f) == OHLC_BAD && ohlcPack(INFINITY) == OHLC_BAD);
+  CHECK(!ohlcOk(OHLC_BAD) && ohlcOk(ohlcPack(OHLC_PX0)));
+  CHECK(ohlcPack(6000.0f) < ohlcPack(6000.25f));                   // monotone: max/min merge in packed space is valid
+  CHECK_NEAR(ohlcUnpack(ohlcPack(7757.17f)), 7757.25f, 0.13);      // a real Yahoo close, worst quarter error
+
+  // parser: the month fixture carries real open/high/low arrays -> packed bars must line up with closes
+  {
+    YahooParser p; uint32_t ts[STAGE_CAP]; float cl[STAGE_CAP]; int16_t w[3 * OHLC_STAGE];
+    std::string body = readFile((std::string(dir) + "/c1m.json").c_str());
+    p.begin(ts, cl, STAGE_CAP, w, OHLC_STAGE);
+    for (size_t i = 0; i < body.size(); i += 97) p.feed(body.data() + i, std::min<size_t>(97, body.size() - i));
+    bool okParse = p.finish();
+    CHECK(okParse && p.count == 23);
+    bool allOk = p.count > 0;
+    for (uint16_t i = 0; i < p.count && i < 5; i++) {
+      if (!ohlcOk(w[i]) || !ohlcOk(w[OHLC_STAGE + i]) || !ohlcOk(w[2 * OHLC_STAGE + i])) allOk = false;
+    }
+    CHECK(allOk);
+    CHECK_NEAR(ohlcUnpack(w[0]), 7736.43f, 0.13);                   // open of the first bar
+    CHECK_NEAR(ohlcUnpack(w[OHLC_STAGE + 1]), 7702.94f, 0.13);      // high of the second bar
+    CHECK_NEAR(ohlcUnpack(w[2 * OHLC_STAGE + 2]), 7612.07f, 0.13);  // low of the third bar
+    bool sane = true;
+    for (uint16_t i = 0; i < p.count; i++) {
+      float o = ohlcUnpack(w[i]), h = ohlcUnpack(w[OHLC_STAGE + i]), l = ohlcUnpack(w[2 * OHLC_STAGE + i]);
+      if (!(h >= l && h + OHLC_Q >= fmaxf(o, cl[i]) && l - OHLC_Q <= fminf(o, cl[i]))) sane = false;
+    }
+    CHECK(sane);   // every packed bar still contains its open and its close
+  }
+
+  // null open in the JSON must leave the bar candle-less, not half-filled
+  {
+    YahooParser p2;
+    uint32_t ts2[8]; float cl2[8]; int16_t w2[3 * OHLC_STAGE];
+    p2.begin(ts2, cl2, 8, w2, OHLC_STAGE);
+    const char *body =
+        "{\"chart\":{\"result\":[{\"timestamp\":[100,200,300],\"indicators\""
+        ":{\"quote\":[{\"open\":[6000,null,6002],\"high\":[6002,6003,6004]"
+        ",\"low\":[5999,6000,6001],\"close\":[6001,6002,6003]}]}}]}}";
+    p2.feed(body, strlen(body)); CHECK(p2.finish() && p2.count == 3);
+    CHECK(ohlcOk(w2[0]) && ohlcOk(w2[OHLC_STAGE]) && ohlcOk(w2[2 * OHLC_STAGE]));
+    CHECK(w2[1] == OHLC_BAD);                                      // open of bar 1 was null
+    CHECK(ohlcOk(w2[OHLC_STAGE + 1]) && ohlcOk(w2[2 * OHLC_STAGE + 1]));  // its high/low still parsed
+  }
+
+  // chartStore: candles must follow their own bar, always
+  {
+    Chart c; uint32_t pt[OHLC_CAP + 8]; float pv[OHLC_CAP + 8]; int16_t pw[OHLC_CAP * 3];
+    c = Chart(); c.t = pt; c.v = pv; c.w = pw; c.cap = OHLC_CAP; c.base = NAN;
+    const uint16_t N = 5;
+    uint32_t t[N]; float v[N]; int16_t raw[3 * N];
+    for (uint16_t i = 0; i < N; i++) {
+      t[i] = 1000 + 86400u * i; v[i] = 6000.0f + i;
+      raw[i] = ohlcPack(6000.0f + i - 0.5f); raw[N + i] = ohlcPack(6001.0f + i); raw[2 * N + i] = ohlcPack(5999.0f + i);
+    }
+    chartStore(c, t, v, N, 6000.0f, 7, 9, raw, N);
+    CHECK(c.n == N && c.valid && c.okEpoch == 9);
+    CHECK(c.t[3] == t[3] && fabsf(c.v[3] - 6003.0f) < 1e-4);        // still index-for-index
+    CHECK_NEAR(ohlcUnpack(c.w[9]), 6002.5f, 0.26);                  // open of stored bar 3
+    CHECK_NEAR(ohlcUnpack(c.w[3 * 3 + 1]), 6004.0f, 0.26);          // high of stored bar 3
+    CHECK_NEAR(ohlcUnpack(c.w[3 * 4 + 2]), 6003.0f, 0.26);          // low of the last bar
+    // a bar with no open, or a high below its low, loses the whole candle (never half of it)
+    raw[1] = OHLC_BAD; chartStore(c, t, v, N, 6000.0f, 7, 9, raw, N);
+    CHECK(c.w[3] == OHLC_BAD && c.w[4] == OHLC_BAD && c.w[5] == OHLC_BAD);
+    raw[1] = ohlcPack(6000.5f); raw[N + 1] = ohlcPack(5990.0f);      // high < low
+    chartStore(c, t, v, N, 6000.0f, 7, 9, raw, N);
+    CHECK(c.w[3] == OHLC_BAD && c.w[4] == OHLC_BAD && c.w[5] == OHLC_BAD);
+    raw[N + 1] = ohlcPack(6002.0f); raw[2 * N + 1] = ohlcPack(6001.4f);  // low above the open and the close
+    chartStore(c, t, v, N, 6000.0f, 7, 9, raw, N);
+    CHECK(c.w[3] == OHLC_BAD);
+    // more bars than the range holds: keep the newest ones, candles move with them (no downsampling)
+    raw[2 * N + 1] = ohlcPack(5999.0f);
+    const uint16_t M = OHLC_CAP + 6;
+    uint32_t t2[M]; float v2[M]; int16_t raw2[3 * M];
+    for (uint16_t i = 0; i < M; i++) {
+      t2[i] = 1000 + 86400u * i; v2[i] = 6100.0f + i;
+      raw2[i] = ohlcPack(6100.0f + i - 0.5f); raw2[M + i] = ohlcPack(6101.0f + i); raw2[2 * M + i] = ohlcPack(6099.0f + i);
+    }
+    chartStore(c, t2, v2, M, 6100.0f, 7, 9, raw2, M);
+    CHECK(c.n == OHLC_CAP);
+    CHECK(c.t[0] == t2[M - OHLC_CAP]);                              // oldest bars fell off the left edge
+    CHECK_NEAR(ohlcUnpack(c.w[0]), 6100.0f + (M - OHLC_CAP) - 0.5f, 0.26);  // ...and their candles went too
+    CHECK_NEAR(ohlcUnpack(c.w[3 * (OHLC_CAP - 1) + 1]), 6101.0f + M - 1, 0.26);
+    // a chart without candles (1D/5D) is untouched by all of this
+    Chart d; uint32_t q3[4]; float w3[4]; d = Chart(); d.t = q3; d.v = w3; d.w = nullptr; d.cap = 2;
+    chartStore(d, t, v, N, 6000.0f, 7, 9, nullptr, 0);
+    CHECK(d.n == 2 && d.w == nullptr);                              // 1D/5D still downsample
+  }
+}
+
 int main(int argc, char **argv) {
   testClock(); testFormat(); testCalculator(); testQuoteView(); testChartStats(); testJson();
-  testYahoo(argc > 1 ? argv[1] : "fixtures"); testChartData(); testWriter(); testPortfolio(); testSettings(); testAppState(); testSchedule(); testPickClose(); testTicks(); testViews();
+  testYahoo(argc > 1 ? argv[1] : "fixtures"); testChartData(); testCandles(argc > 1 ? argv[1] : "fixtures"); testWriter(); testPortfolio(); testSettings(); testAppState(); testSchedule(); testPickClose(); testTicks(); testViews();
   printf("%d passed, %d failed\n", g_pass, g_fail);
   return g_fail ? 1 : 0;
 }

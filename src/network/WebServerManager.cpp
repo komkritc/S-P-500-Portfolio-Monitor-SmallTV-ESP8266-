@@ -214,8 +214,20 @@ static void apiChart() {
   w.beginObj().kStr("range", rangeName(range)).kStr("interval", rangeInterval(range)).kBool("valid", c.valid && s.valid)
    .kBool("stale", g_app.chartStale[range]).kInt("updated", c.valid ? c.okEpoch : 0).kInt("count", outN);
   w.kNum("first", s.first).kNum("last", s.last).kNum("base", s.base).kNum("change", s.change).kNum("changePct", s.changePct).kNum("min", s.minV).kNum("max", s.maxV);
+  // Candles (1M only). Asked for with ?ohlc=1 so other clients pay nothing. They cannot survive a
+  // downsample (a bucket would need one merged bar), so they are served only when the points are the
+  // stored ones. A bar with no candle is emitted as null - never as an invented range.
+  const bool withW = c.w && outN == n && server.hasArg("ohlc");
+  w.kBool("candles", withW);
   w.key("t").beginArr(); for (uint16_t i = 0; i < outN; i++) w.integer(ot[i]); w.endArr();
   w.key("v").beginArr(); for (uint16_t i = 0; i < outN; i++) w.num(ov[i]); w.endArr();
+  if (withW) {
+    for (uint8_t k = 0; k < 3; k++) {
+      w.key(k == 0 ? "o" : k == 1 ? "h" : "l").beginArr();
+      for (uint16_t i = 0; i < outN; i++) { int16_t q = c.w[3u * i + k]; w.num(ohlcOk(q) ? ohlcUnpack(q) : NAN); }
+      w.endArr();
+    }
+  }
   w.endObj();
   free(dt); free(dv);
 }
@@ -226,7 +238,12 @@ static void apiJobGet() {
   const market::AddJob &j = market::addJob();
   const char *st = j.state == market::JOB_PENDING ? "pending" : j.state == market::JOB_OK ? "ok" : j.state == market::JOB_ERROR ? "error" : "idle";
   Reply r(200);
-  r.w.beginObj().kStr("state", st).kStr("error", j.error).kStr("symbol", j.symbol).kBool("updated", j.updated).endObj();
+  r.w.beginObj().kStr("state", st).kStr("error", j.error).kStr("symbol", j.symbol).kBool("updated", j.updated);
+  // A thb add (preview or commit) reports the close it used. When `exact` is false the requested day had
+  // no session, so `priceDate` names the older trading day the close was taken from: the browser must show
+  // that and get a confirmation before the row is written.
+  if (isNum(j.price)) { r.w.kNum("buy", j.price).kNum("qty", j.qty, 6).kStr("priceDate", j.priceDate).kBool("exact", j.exact); }
+  r.w.endObj();
   if (j.state == market::JOB_OK || j.state == market::JOB_ERROR) market::consumeAddJob();
 }
 
@@ -501,8 +518,11 @@ static void postPositions() {
   const char *sym = j.str("symbol"), *date = j.str("date");
   double thb, qty, buy;
   if (j.num("thb", thb)) {
+    // preview:true looks the close up and stops there; the browser confirms, then posts qty+buy.
+    bool prev = false;
+    j.boolean("preview", prev);
     if (market::addJob().state == market::JOB_PENDING) { sendErr(409, "another add is in progress"); return; }
-    market::requestAddByThb(sym, date, thb);
+    market::requestAddByThb(sym, date, thb, prev);
     const market::AddJob &a = market::addJob();
     if (a.state == market::JOB_ERROR) { char m[48]; strlcpy(m, a.error, sizeof m); market::consumeAddJob(); sendErr(400, m); return; }
     sendJson(202, "{\"ok\":true,\"state\":\"pending\"}");

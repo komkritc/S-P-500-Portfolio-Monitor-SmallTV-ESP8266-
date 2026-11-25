@@ -65,10 +65,15 @@ Conventions
 ```json
 {"range":"1d","interval":"5m","valid":true,"stale":false,"updated":1795210560,"count":79,
  "first":7150.39,"last":6910.39,"base":7175.83,"change":-265.44,"changePct":-3.70,
- "min":6882.66,"max":7198.67,
- "t":[1795185000,1795185300],"v":[7150.39,7135.65]}
+ "min":6882.66,"max":7198.67,"candles":true,
+ "t":[1793021400,1793107800],"v":[7150.39,7135.65],
+ "o":[7136.43,7144.62],"h":[7170.40,7152.94],"l":[7109.34,7112.07]}
 ```
 `base` is the reference for `change`: previous close for `1d`, first point for `5d`/`1mo`. `t[]`/`v[]` are parallel arrays, no synthetic points. Optional `&max=N` (N>=8) downsamples (min/max preserving). If never fetched: `valid:false,count:0,t:[],v:[]`. Bad `range` -> 400.
+
+**Candles (fw 1.2.3)**: add `&ohlc=1`; for a range that stores bars the response gains `"candles":true` and parallel `o[]`/`h[]`/`l[]` arrays the same length as `t[]`. **Only `1mo` has candles** - `1d`/`5d` answer `"candles":false` and send no `o`/`h`/`l`, because keeping three float arrays for every range costs +2.6 KB of RAM this chip does not have (see *Memory* in the README). Bars are stored as int16 offsets on a 0.25-point grid (`p = 2048 + q/4`, covering 2,048-10,239.75), so every edge is exact to a quarter of a point and the values arrive on that grid - the live audit asserts exactly that. A bar whose open/high/low Yahoo did not send, or whose high/low contradict its own open/close, is `null` in all three arrays; the dashboard then draws a close tick rather than inventing a range. Candles are not served with `&max=` downsampling (a merged bucket would need a merged bar) and the candle range is never downsampled: if Yahoo sends more than 24 daily bars the **newest 24** are kept, so the oldest fall off the left edge instead of being smeared together.
+
+There is **no** Bollinger endpoint and no BB setting: the dashboard computes bands in the browser from `v[]` (fw 1.2.1) and keeps the on/off switch, period and width in that browser's `localStorage`. The device stores at most 80 / 112 / 24 points per range (`1d` / `5d` / `1mo`), so a period longer than `count` simply draws no bands.
 
 ### GET /api/wifi/status
 ```json
@@ -98,7 +103,9 @@ While `scanning` the previous list (possibly empty) is returned. Poll every ~1.5
 `backlight` (`5..100`, default `90`, added in fw 1.1.6): LCD brightness in percent. POST it on its own and the panel dims straight away - no restart, and the **LCD brightness (%)** slider on the Settings tab does exactly that when you let go of it. The backlight is PWM on GPIO 5 (`analogWrite`, range 255) wired **active-low**: duty 0 is full on and 255 dark, so the level is inverted on the way to the pin. Duty is the slider position squared, because an LED's light output is linear in duty while the eye is not - 50 % is about a quarter of the light. `5 %` is a hard floor (6/255 on the high side), so the panel can never be dimmed past the point where only the web UI could bring it back. The level is kept in `settings.json`, so it survives reboots and OTA updates; a settings file from before 1.1.6 simply keeps `90`.
 
 ### GET /api/positions/job
-State of the last "add position" request: `{"state":"idle|pending|ok|error","error":"","symbol":"^GSPC","updated":false}`.
+State of the last "add position" request: `{"state":"idle|pending|ok|error","error":"","symbol":"^GSPC","updated":false}`. Once the lookup resolves (or fails) the state is consumed by this read and goes back to `idle`, so read it once when it turns `ok`/`error`.
+
+When the job has a price to report (`state:"ok"` from a `thb` form) the reply also carries the proposal: `"buy":7237.17,"qty":1.381750,"priceDate":"2026-11-20","exact":true`. `priceDate` is the session the close really came from: a weekend or holiday purchase date borrows the close of the last session before it, and then `exact:false`. Nothing has been written if the POST asked for `"preview":true` - the dashboard shows `buy`/`qty`/`priceDate` and commits only after the user confirms, by posting the `qty`+`buy` form.
 
 ### GET /api/realised
 Aggregates over the whole sale ledger (admin auth). One streaming pass at boot, then kept in RAM.
@@ -110,7 +117,7 @@ Aggregates over the whole sale ledger (admin auth). One streaming pass at boot, 
  "lastRealised":-3910.00,"lastTs":1795210560,
  "years":[{"year":2026,"pl":-3910.00},{"year":2025,"pl":1200.00}]}
 ```
-`count` = sales that still stand (reversed ones excluded), `reversed` = number of undo records, `records` = all lines in the ledger. `pl` is the sum over valid **and** reversal records (a reversal carries the negated amount). `years` holds up to 8 newest calendar years, newest first. `valid:false` means the ledger could not be read -> `pl` is `null` (never `0`). `warn`/`full` flag the 2000-line ledger cap (warning from 1800). `recovery`/`badLine` report boot-time repair.
+`count` = sales that still stand (reversed ones excluded), `reversed` = number of undo records, `records` = all lines in the ledger. `pl` is the sum over valid **and** reversal records (a reversal carries the negated amount). `years` holds up to 6 newest calendar years, newest first (fw 1.2.0; earlier firmware kept only 4, so a 5th/6th year used to be dropped silently - `pl` itself was always exact). A reversal books to the **sale's own year**, so reversing a sale never changes "this year". `valid:false` means the ledger could not be read -> `pl` is `null` (never `0`). `warn`/`full` flag the 2000-line ledger cap (warning from 1800). `recovery`/`badLine` report boot-time repair.
 
 ### GET /api/sales?symbol=^GSPC&offset=0&limit=8
 One page of the ledger, newest first (admin auth). `limit` is clamped to 1..8.
@@ -126,7 +133,9 @@ One page of the ledger, newest first (admin auth). `limit` is clamped to 1..8.
 
 ### GET /api/sales/export[?symbol=^GSPC]
 `text/csv` attachment (`sells.csv`), streamed. Header:
-`seq,date,id,type,status,symbol,qty,price,fee,gross,net,cost,realised`
+`seq,id,type,status,ts,symbol,date,qty,price,refPrice,priceSource,fee,gross,net,cost,realised,refSeq,refId,lots`
+
+`type`: `sale` | `reversal`. `status`: `valid` | `reversed` | `reversal`. `ts` is the UTC second the record was appended; `refPrice`/`refSeq`/`refId` are empty/0 unless the close was known (`refPrice` empty = not available, never `0`). `lots` lists every lot the record touched, space separated as `lotId*soldQty@buyPrice` (8 decimals / 6 decimals) - sold quantity is derived per lot as `before-after` for a sale and `after-before` for a reversal. All allocations always fit the field (fw 1.2.0; earlier builds clipped the list after about 6 lots and did not say so).
 
 ### GET /api/sales/job
 State of the last "preview a sale" price lookup: `{"state":"idle|pending|ok|error","symbol":"^GSPC","date":"2026-11-19","price":6200,"error":""}`.
@@ -147,7 +156,7 @@ Notes the dashboard relies on
 | `POST /api/settings` | any subset of the settings fields; `adminPass` (string, "" = unchanged), `clearAdminPass:true` | `200 {"ok":true,"settings":{...as GET...}}` | all-or-nothing validation, `400 {"ok":false,"error":"quoteRefreshS must be 15..3600"}`. Changing `hostname` takes effect after restart (`"restart":true` in the reply). |
 | `POST /api/refresh` | `{"what":"all"\|"quote"\|"charts"\|"portfolio"}` | `202 {"ok":true}` | queues an immediate refresh |
 | `POST /api/cache/clear` | `{}` | `200 {"ok":true}` | drops cached quotes/charts (RAM + flash) and refetches |
-| `POST /api/positions` | `{"symbol":"^GSPC","date":"YYYY-MM-DD","thb":10000}` **or** `{"symbol","date","qty","buy"}` | `202 {"ok":true,"state":"pending"}` (thb form, poll `/api/positions/job`) or `200 {"ok":true,"state":"ok"}` (qty/buy form) | `thb` form: buy price = close on that date, `qty = thb / buy`. `409` if a job is pending. Same symbol+date updates the existing row. Max 12 positions. |
+| `POST /api/positions` | `{"symbol":"^GSPC","date":"YYYY-MM-DD","thb":10000}` (add the flag `"preview":true` to only look the price up) **or** `{"symbol","date","qty","buy"}` | `202 {"ok":true,"state":"pending"}` (thb form, poll `/api/positions/job`) or `200 {"ok":true,"state":"ok"}` (qty/buy form) | `thb` form: buy price = close on that date, `qty = thb / buy`; if that day had no session the close of the last session before it is used and the job reports its date (`priceDate`, `exact:false`). With `"preview":true` the lookup stops there and **writes nothing**: the UI confirms with the user and then posts the `qty`+`buy` form. `409` if a job is pending. Same symbol+date updates the existing row. Max 12 positions. |
 | `POST /api/positions/delete` | `{"index":0}` | `200 {"ok":true}` | |
 | `POST /api/sales/preview` | `{"symbol":"^GSPC","date":"YYYY-MM-DD","method":"fifo"\|"specific","mode":"qty"\|"thb"\|"all","lotId":1,"qty":10,"amount":10000,"price":6200,"fee":10}` | `200 {"ok":true,"state":"ready","preview":{...}}` | Validates + allocates the lots and computes the money **without writing anything**. Without `price` it answers `202 {"ok":true,"state":"pending"}` and looks up the closing price of `date` (poll `/api/sales/job`, then re-post the same body; the reply is then `ready` and `priceSource:"yahoo"`). `400` with a readable reason (`"only 51.67 available"`, `"no open position for that symbol"`, `"sale date is in the future"`, `"choose a lot"`, ...). |
 | `POST /api/sales/confirm` | the preview body + `"token":<preview.token>` | `200 {"ok":true,"state":"committed","id":"TX-000004","seq":4,"preview":{...}}` | The token binds the commit to the portfolio state the preview was computed from: any lot change, new sale or undo in between gives `409` (`"preview is out of date..."`). Never deletes anything; the lot quantities are set to the preview's `after`. |

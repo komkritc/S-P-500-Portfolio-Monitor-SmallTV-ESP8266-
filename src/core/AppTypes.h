@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <math.h>
 
-#define FW_VERSION "1.1.6"
+#define FW_VERSION "1.2.9"
 #define SP500_SYMBOL "^GSPC"
 
 static const uint8_t  MAX_POSITIONS = 12;   // open lots; trimmed from 24 to fit the sale ledger in RAM
@@ -19,11 +19,39 @@ static const uint16_t LEDGER_WARN_AT    = 1800;  // 90% of the cap -> warn
 static const uint8_t  MAX_LOT_ALLOCS    = 12;    // a sale can touch every lot of one symbol (<= MAX_POSITIONS)
 static const uint16_t SALES_PAGE_MAX    = 8;     // records returned by one /api/sales page (keeps SalePage small)
 static const uint16_t LEDGER_LINE_MAX   = 1536;  // largest single record line (JSON, no '\n'): 12 allocs fit
-static const uint8_t  YEAR_BUCKETS      = 4;     // "this year" + previous years kept for the LCD/web summary
+static const uint8_t  YEAR_BUCKETS      = 6;     // "this year" + previous years kept for the LCD/web summary (the current year can never be evicted; older ones can, silently)
 
 enum ChartRange : uint8_t { RANGE_1D = 0, RANGE_5D = 1, RANGE_1M = 2, RANGE_COUNT = 3 };
 static const uint16_t RANGE_CAP[RANGE_COUNT] = {80, 112, 24};   // stored points per range
 static const uint16_t CHART_POOL = 80 + 112 + 24;
+
+// ---------------------------------------------------------------- candlesticks (fw 1.2.3)
+// Only the 1M range carries candles. The ESP32 build keeps O/H/L for all three ranges as floats
+// (+2,592 B of RAM); on this chip the worst heap dip during a refresh with the dashboard open is
+// ~1,000 B, so that build does not fit. One month of daily bars is also the range where candles
+// actually pay off (a close-only month line flattens the shape), so the other two stay lines.
+// Cost here: OHLC_POOL (144 B static) + OHLC_STAGE bytes of staging = 336 B.
+static const uint16_t OHLC_CAP   = RANGE_CAP[RANGE_1M];   // 24 bars, one per trading day
+static const uint16_t OHLC_STAGE = 48;                    // raw 1mo/1d bars staged before packing
+static const uint16_t OHLC_POOL  = OHLC_CAP * 3;          // int16 words in the shared pool
+
+// Packing: a bar price p is stored as int16 q with p = OHLC_PX0 + q * OHLC_Q. Origin 2,048 and a
+// quarter-point step cover ^GSPC levels 2,048 .. 10,239.75 - the index is ~6,000 today, so a bar
+// edge is accurate to 0.25 points (0.004 %: about 0.05 px on the panel's 80 px plot, and far finer
+// than the 2 decimals Yahoo itself publishes) while three values cost 6 bytes instead of 12.
+// OHLC_BAD marks a bar whose candle could not be taken (missing, or outside the window): the API
+// then returns null for that bar rather than inventing a price.
+static const float   OHLC_PX0 = 2048.0f;
+static const float   OHLC_Q   = 0.25f;
+static const int16_t OHLC_BAD = (int16_t)0x8000;
+static inline int16_t ohlcPack(float p) {
+  if (!(p >= OHLC_PX0) || p > OHLC_PX0 + 32767.0f * OHLC_Q) return OHLC_BAD;   // also rejects NaN
+  long q = lroundf((p - OHLC_PX0) / OHLC_Q);
+  if (q >= 0x8000L) q = 0x7fffL;
+  return (int16_t)q;
+}
+static inline float ohlcUnpack(int16_t q) { return OHLC_PX0 + (float)q * OHLC_Q; }
+static inline bool  ohlcOk(int16_t q) { return q != OHLC_BAD; }
 
 enum MarketStatus : uint8_t { MS_UNKNOWN = 0, MS_OPEN, MS_CLOSED, MS_PRE };
 enum QuoteState   : uint8_t { Q_FRESH = 0, Q_STALE, Q_MISSING, Q_INVALID };
@@ -108,6 +136,7 @@ struct Chart {
   uint16_t cap;
   uint32_t* t;
   float*    v;
+  int16_t*  w;                // packed candles: 3 int16 per point (open, high, low); null = no candles here
   float     base;             // reference for change: prev close (1D) or NaN = first point
   uint32_t  okMs;
   uint32_t  okEpoch;

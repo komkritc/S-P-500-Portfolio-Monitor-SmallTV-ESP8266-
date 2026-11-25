@@ -37,6 +37,7 @@ struct AppState {
   Chart    charts[RANGE_COUNT]; // 1D, 5D, 1M. t/v point into the shared pool below
   uint32_t chartT[CHART_POOL];        // one pool sized for the sum of RANGE_CAP (no per-range waste)
   float    chartV[CHART_POOL];
+  int16_t  chartW[OHLC_POOL];         // packed 1M candles only (see the candlestick note in AppTypes.h)
 
   // effective refresh intervals in seconds (the scheduler may stretch them while the market is closed);
   // staleness = 3 x the effective interval.

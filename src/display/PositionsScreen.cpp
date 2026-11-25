@@ -23,7 +23,7 @@ void drawPositions(Ui &u, const AppState &a, uint8_t window, bool full) {
 
   if (a.posCount > ROWS_PER_WINDOW) {
     unsigned last = first + ROWS_PER_WINDOW; if (last > a.posCount) last = a.posCount;
-    snprintf(b, sizeof b, "Positions %u-%u/%u", first + 1u, last, (unsigned)a.posCount);
+    snprintf(b, sizeof b, "Pos %u-%u/%u", first + 1u, last, (unsigned)a.posCount);   // short: the header clock takes the right side
   } else snprintf(b, sizeof b, "Positions (%u)", (unsigned)a.posCount);
   drawHeader(u, a, b, 1, full);
 
@@ -72,13 +72,13 @@ void drawPositions(Ui &u, const AppState &a, uint8_t window, bool full) {
   // ---- totals (single engine: the numbers come from the summary)
   if (full) g->drawFastHLine(0, 114, 240, C_LINE);
   u.text(5, "Total NAV", 1, 8, 117, A_LEFT, C_MUTED);
-  fmtThb(b, sizeof b, s.nav);
+  fmtThb(b, sizeof b, s.nav, 0);   // whole baht, matching the Portfolio page's NAV
   u.text(6, b, 1, 232, 117, A_RIGHT, isNum(s.nav) ? C_TEXT : C_MUTED);
   u.text(7, "Total Invested", 1, 8, 132, A_LEFT, C_MUTED);
-  fmtThb(b, sizeof b, s.invested);
+  fmtThb(b, sizeof b, s.invested, 0);   // whole baht, matching the Portfolio page's invested figure
   u.text(8, b, 1, 232, 132, A_RIGHT, C_TEXT);
   u.text(9, "Unrealised P/L", 1, 8, 147, A_LEFT, C_MUTED);
-  char amt[40]; fmtThbSigned(amt, sizeof amt, s.pl); fmtPct(c, sizeof c, s.retPct);
+  char amt[40]; fmtThbSigned(amt, sizeof amt, s.pl, 0); fmtPct(c, sizeof c, s.retPct);
   snprintf(b, sizeof b, "%s (%s)", amt, c);
   const int maxW = 224 - Ui::width("Unrealised P/L", 1) - 6;
   if (Ui::width(b, 1) > maxW) { fmtNum(amt, sizeof amt, s.pl, 2, SIGN_ALWAYS); snprintf(b, sizeof b, "%s (%s)", amt, c); }   // drop "THB" when tight

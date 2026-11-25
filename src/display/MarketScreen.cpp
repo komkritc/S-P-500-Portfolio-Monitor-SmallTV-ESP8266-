@@ -37,7 +37,7 @@ void drawMarket(Ui &u, const AppState &a, uint8_t range, bool full, bool chartDi
   const ChartStats &st = a.chartStats[range];
   char b[48], c[40];
   if (full) s_lastRange = -1;
-  drawHeader(u, a, "S&P 500 (^GSPC)", 2, full);
+  drawHeader(u, a, "Market", 2, full);   // was "S&P 500 (^GSPC)": the ticker below already names the index, and the header clock needs the room
 
   // ---- current quote: independent of the selected chart range
   if (!q.valid) {

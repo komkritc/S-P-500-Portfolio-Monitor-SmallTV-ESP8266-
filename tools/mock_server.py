@@ -245,7 +245,8 @@ def wifi_scan(refresh):
 
 
 # ---- positions job ----
-JOB = {"state": "idle", "error": "", "symbol": "^GSPC", "updated": False, "end": 0, "p": None}
+JOB = {"state": "idle", "error": "", "symbol": "^GSPC", "updated": False, "end": 0, "p": None,
+       "preview": False, "priceDate": "", "exact": True}
 
 
 def job_view():
@@ -253,9 +254,13 @@ def job_view():
         if JOB["p"]["symbol"] not in PRICES:
             JOB.update(state="error", error="no price data for %s on %s" % (JOB["p"]["symbol"], JOB["p"]["date"]))
         else:
-            upsert(JOB["p"])
+            if not JOB["preview"]:            # a preview never writes; the browser confirms, then posts qty+buy
+                upsert(JOB["p"])
             JOB.update(state="ok", updated=True)
-    return {k: JOB[k] for k in ("state", "error", "symbol", "updated")}
+    out = {k: JOB[k] for k in ("state", "error", "symbol", "updated")}
+    if JOB["state"] == "ok":
+        out.update(buy=JOB["p"]["buy"], qty=JOB["p"]["qty"], priceDate=JOB["priceDate"], exact=JOB["exact"])
+    return out
 
 
 def upsert(p):
@@ -269,11 +274,16 @@ def upsert(p):
 
 
 def close_on(date):
+    """(close, session_date, exact) - mirrors the device's pickCloseOnDate: the newest bar on or before
+    `date`, so a weekend/holiday date borrows the previous session and says which one."""
     best = None
     for t, c in P1M:
-        if time.strftime("%Y-%m-%d", time.gmtime(t)) <= date:
-            best = c
-    return best or P1M[0][1]
+        d = time.strftime("%Y-%m-%d", time.gmtime(t))
+        if d <= date:
+            best = (c, d)
+    if best is None:
+        return P1M[0][1], time.strftime("%Y-%m-%d", time.gmtime(P1M[0][0])), False
+    return best[0], best[1], best[1] == date
 
 
 # ---- sales (mirrors the device's /sells.jsonl behaviour) ----
@@ -585,7 +595,7 @@ class H(BaseHTTPRequestHandler):
             if p == "/api/sales/job":
                 if SALEJOB["state"] == "pending" and time.time() >= SALEJOB["end"]:
                     if SALEJOB["symbol"] in PRICES:
-                        SALEJOB.update(state="ok", price=close_on(SALEJOB["date"]))
+                        SALEJOB.update(state="ok", price=close_on(SALEJOB["date"])[0])
                     else:
                         SALEJOB.update(state="error", error="no price data for %s on %s" % (SALEJOB["symbol"], SALEJOB["date"]))
                 return self.send(200, {k: SALEJOB[k] for k in ("state", "error", "symbol", "date", "price")})
@@ -638,8 +648,9 @@ class H(BaseHTTPRequestHandler):
                 if "thb" in b:
                     if not isinstance(b["thb"], (int, float)) or b["thb"] <= 0:
                         return self.err(400, "thb must be > 0")
-                    buy = close_on(b["date"])
+                    buy, day, exact = close_on(b["date"])
                     JOB.update(state="pending", error="", symbol=sym, updated=False, end=time.time() + 2.5,
+                               preview=bool(b.get("preview")), priceDate=day, exact=exact,
                                p={"symbol": sym, "date": b["date"], "qty": round(b["thb"] / buy, 6), "buy": buy})
                     return self.send(202, {"ok": True, "state": "pending"})
                 q, buy = b.get("qty"), b.get("buy")

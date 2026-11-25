@@ -25,8 +25,30 @@ uint16_t downsampleMinMax(const uint32_t *t, const float *v, uint16_t n, uint32_
   return out;
 }
 
-void chartStore(Chart &c, const uint32_t *t, const float *v, uint16_t n, float base, uint32_t okMs, uint32_t okEpoch) {
-  c.n = downsampleMinMax(t, v, n, c.t, c.v, c.cap);
+void chartStore(Chart &c, const uint32_t *t, const float *v, uint16_t n, float base, uint32_t okMs, uint32_t okEpoch,
+                const int16_t *wRaw, uint16_t wRawCap) {
+  // Candle ranges never downsample: a candle must line up with its own bar, and the min/max bucket
+  // merge would produce two bars per bucket. Instead the newest c.cap bars are kept (the oldest
+  // fall off the left edge), which for a month of daily bars is also the more useful window.
+  uint16_t src0 = 0, cnt = n;
+  if (c.w && n > c.cap) { src0 = (uint16_t)(n - c.cap); cnt = c.cap; }
+  if (c.w) {
+    c.n = downsampleMinMax(t + src0, v + src0, cnt, c.t, c.v, c.cap);
+    for (uint16_t i = 0; i < c.n; i++) {
+      const uint16_t r = (uint16_t)(src0 + i);
+      int16_t o = OHLC_BAD, h = OHLC_BAD, l = OHLC_BAD;
+      if (wRaw && r < wRawCap) { o = wRaw[r]; h = wRaw[wRawCap + r]; l = wRaw[2u * wRawCap + r]; }
+      bool ok = ohlcOk(o) && ohlcOk(h) && ohlcOk(l);
+      if (ok) {   // a bar Yahoo did not send, or one whose high/low contradict open/close, is dropped
+        float fo = ohlcUnpack(o), fh = ohlcUnpack(h), fl = ohlcUnpack(l), fc = c.v[i];
+        ok = fh >= fl && fh + OHLC_Q >= (fo > fc ? fo : fc) && fl - OHLC_Q <= (fo < fc ? fo : fc);
+      }
+      if (!ok) { o = h = l = OHLC_BAD; }
+      c.w[3u * i] = o; c.w[3u * i + 1] = h; c.w[3u * i + 2] = l;
+    }
+  } else {
+    c.n = downsampleMinMax(t, v, n, c.t, c.v, c.cap);
+  }
   c.base = base;
   c.valid = c.n >= 2;
   c.failed = false;
@@ -50,19 +72,20 @@ bool parseRange(const char *s, uint8_t &r) {
   return false;
 }
 
-bool pickCloseOnDate(const uint32_t *t, const float *v, uint16_t n, int y, int m, int d, double &price, bool *exact, int32_t fixedOffsetSec) {
+bool pickCloseOnDate(const uint32_t *t, const float *v, uint16_t n, int y, int m, int d, double &price, bool *exact, int32_t fixedOffsetSec, uint32_t *barTs) {
   const int64_t target = daysFromCivil(y, m, d);
   int best = -1;                                     // newest valid bar on a day before the target
   for (uint16_t i = 0; i < n; i++) {
     if (!(v[i] > 0)) continue;
     LocalTime lt = toLocal(t[i], fixedOffsetSec == EXCHANGE_NY ? nyOffsetSec(t[i]) : fixedOffsetSec);
     int64_t day = daysFromCivil(lt.y, lt.m, lt.d);
-    if (day == target) { price = v[i]; if (exact) *exact = true; return true; }
+    if (day == target) { price = v[i]; if (exact) *exact = true; if (barTs) *barTs = t[i]; return true; }
     if (day < target) best = i;                      // bars are time-ordered
   }
   if (best < 0) return false;                        // date precedes all data: never guess a price
   price = v[best];
   if (exact) *exact = false;
+  if (barTs) *barTs = t[best];
   return true;
 }
 

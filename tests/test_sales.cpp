@@ -143,6 +143,96 @@ static void testPreview() {
   SaleRequest zero = R("^GSPC", "2026-11-19");
   zero.qty = 0; zero.price = 6200;
   CHECK(!sale::preview(pos, n, m, zero, now, pv) && errHas(pv, "quantity"));
+
+  // ---- 1.2.0: FIFO order is the purchase DATE, not the insertion order ----
+  // 1b. lots added newest-first: a sale must still consume the oldest purchase first, and a
+  //     mid-lot split keeps the same lot split across the two allocations.
+  {
+    Position p2[MAX_POSITIONS]; uint8_t n2 = 0; PortfolioMeta m2;
+    memset(&m2, 0, sizeof m2); m2.nextLotId = 1;
+    addLot(p2, n2, m2, "AAA", "2026-03-01", 5, 300);   // id 1, added first but bought latest
+    addLot(p2, n2, m2, "AAA", "2026-01-01", 5, 100);   // id 2, added second but bought first
+    addLot(p2, n2, m2, "AAA", "2026-02-01", 5, 200);   // id 3, middle
+    SaleRequest g = R("AAA", "2026-11-20");
+    g.qty = 7; g.price = 400; g.fee = 0;
+    CHECK(sale::preview(p2, n2, m2, g, now, pv) && pv.ok && pv.nAlloc == 2);
+    CHECK(pv.alloc[0].lot == 2 && fabs(pv.alloc[0].before - 5) < 1e-9 && fabs(pv.alloc[0].after) < 1e-9);
+    CHECK(pv.alloc[1].lot == 3 && fabs(pv.alloc[1].before - 5) < 1e-9 && fabs(pv.alloc[1].after - 3) < 1e-9);
+    CHECK_NEAR(pv.cost, 5 * 100 + 2 * 200, 1e-9);      // oldest date first: 100, then 200
+
+    // same-date tie: insertion order (lot id) breaks the tie, deterministically
+    Position p3[MAX_POSITIONS]; uint8_t n3 = 0; PortfolioMeta m3;
+    memset(&m3, 0, sizeof m3); m3.nextLotId = 1;
+    addLot(p3, n3, m3, "BBB", "2026-01-01", 5, 100);   // id 1
+    addLot(p3, n3, m3, "BBB", "2026-01-01", 5, 200);   // id 2, same date
+    SaleRequest h = R("BBB", "2026-11-20");
+    h.qty = 6; h.price = 400;
+    CHECK(sale::preview(p3, n3, m3, h, now, pv) && pv.ok && pv.nAlloc == 2 &&
+          pv.alloc[0].lot == 1 && pv.alloc[1].lot == 2);
+    CHECK_NEAR(pv.cost, 5 * 100 + 1 * 200, 1e-9);
+
+    // 1c. legacy lot without a date ("") sorts oldest: still sellable, and it is consumed first
+    Position p4[MAX_POSITIONS]; uint8_t n4 = 0; PortfolioMeta m4;
+    memset(&m4, 0, sizeof m4); m4.nextLotId = 1;
+    addLot(p4, n4, m4, "CCC", "", 5, 100);             // legacy: no date
+    addLot(p4, n4, m4, "CCC", "2026-01-01", 5, 200);
+    SaleRequest k = R("CCC", "2026-11-20");
+    k.qty = 6; k.price = 400;
+    CHECK(sale::preview(p4, n4, m4, k, now, pv) && pv.ok && pv.nAlloc == 2 &&
+          pv.alloc[0].lot == 1 && pv.alloc[1].lot == 2);
+    CHECK_NEAR(pv.cost, 5 * 100 + 1 * 200, 1e-9);
+  }
+}
+
+// ---------------------------------------------------------------- CSV export row (1.2.1)
+// The device builds each CSV row through sale::csvLineStr (see SaleStore::csvLine). The old code
+// used a 256 B lots field that silently clipped from the 7th allocation on - the 512 B field must
+// now hold the worst realistic record (12 allocations x ~40 B) without spilling.
+static void testCsvLine() {
+  SaleRecord r; memset(&r, 0, sizeof r);
+  r.seq = 7; r.ts = 1750000000u; r.type = REC_SALE; r.priceSource = PRICE_MANUAL;
+  strcpy(r.id, "TX-000007");
+  strcpy(r.symbol, "^GSPC"); strcpy(r.date, "2026-11-19");
+  r.qty = 12; r.price = 6200; r.refPrice = NAN; r.fee = 10;
+  r.gross = 74400; r.net = 74390; r.cost = 72200; r.realised = 2190;
+  r.nAlloc = 2;
+  LotAlloc a0 = {}; a0.lot = 1; strcpy(a0.date, "2026-01-02"); a0.buy = 6000; a0.oqty = 10; a0.before = 10; a0.after = 0;
+  LotAlloc a1 = {}; a1.lot = 2; strcpy(a1.date, "2026-02-02"); a1.buy = 6100; a1.oqty = 5;  a1.before = 5;  a1.after = 3;
+  r.alloc[0] = a0; r.alloc[1] = a1;
+
+  char out[832];
+  size_t n = sale::csvLineStr(r, false, out, sizeof out);
+  CHECK(n > 0 && n < sizeof out && out[n - 1] == '\n' && out[n] == 0);
+  CHECK(strstr(out, "7,\"TX-000007\",sale,valid,1750000000,\"^GSPC\",\"2026-11-19\"") == out);
+  CHECK(strstr(out, ",,manual,") != nullptr);                          // unknown refPrice -> empty, never 0
+  CHECK(strstr(out, "1*10.00000000@6000.000000 2*2.00000000@6100.000000") != nullptr);
+
+  // reversed sale and reversal rows
+  n = sale::csvLineStr(r, true, out, sizeof out);
+  CHECK(strstr(out, ",sale,reversed,") != nullptr);
+  r.type = REC_REVERSAL;
+  n = sale::csvLineStr(r, false, out, sizeof out);
+  CHECK(strstr(out, ",reversal,reversal,") != nullptr);
+  r.type = REC_SALE;
+
+  // worst case: 12 allocations with maximal-looking ids and 8/6-decimal values must all survive
+  SaleRecord w = r;
+  w.nAlloc = MAX_LOT_ALLOCS;
+  for (uint8_t i = 0; i < MAX_LOT_ALLOCS; i++) {
+    LotAlloc &x = w.alloc[i];
+    memset(&x, 0, sizeof x);
+    x.lot = (uint16_t)(65535 - MAX_LOT_ALLOCS + 1 + i);
+    strcpy(x.date, "2026-01-02");
+    x.buy = 654321.123456;
+    x.before = 1234567890.12345678;
+    x.after = 0;
+    x.oqty = x.before;
+  }
+  n = sale::csvLineStr(w, false, out, sizeof out);
+  CHECK(n > 0 && n < sizeof out && out[n - 1] == '\n' && strlen(out) == n);
+  CHECK(strstr(out, "65524*1234567890") != nullptr);                   // first allocation kept
+  CHECK(strstr(out, "65535*1234567890") != nullptr);                   // last allocation kept too
+  CHECK(strstr(out, "@654321.123456 ") != nullptr);                    // no silent cut mid-list
 }
 
 // ---------------------------------------------------------------- token binding
@@ -591,6 +681,7 @@ static void testSeqAfterDelete() {
 int main(int, char **) {
   testSeqAfterDelete();
   testPreview();
+  testCsvLine();
   testToken();
   testRecords();
   testApplyAndReverse();

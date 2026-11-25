@@ -530,33 +530,10 @@ struct CsvCtx {
 };
 
 static void csvLine(const SaleRecord &r, const ReversedBits &bits, CsvSink sink, void *ctx) {
-  char lots[256];
-  size_t lo = 0;
-  lots[0] = 0;
-  for (uint8_t i = 0; i < r.nAlloc; i++) {
-    const LotAlloc &a = r.alloc[i];
-    double sold = r.type == REC_SALE ? a.before - a.after : a.after - a.before;
-    int n = snprintf(lots + lo, sizeof lots - lo, "%s%u*%.8f@%.6f", i ? " " : "", (unsigned)a.lot, sold, a.buy);
-    if (n < 0 || (size_t)n >= sizeof lots - lo) break;
-    lo += (size_t)n;
-  }
-  char refPx[32];
-  if (isNum(r.refPrice)) snprintf(refPx, sizeof refPx, "%.6f", r.refPrice);
-  else refPx[0] = 0;                                    // unknown -> empty, never 0
-  char line[704];
-  int n = snprintf(line, sizeof line,
-                   "%lu,\"%s\",%s,%s,%lu,\"%s\",\"%s\",%.8f,%.6f,%s,%s,%.4f,%.6f,%.6f,%.6f,%.6f,%lu,\"%s\",\"%s\"\n",
-                   (unsigned long)r.seq, r.id,
-                   r.type == REC_SALE ? "sale" : "reversal",
-                   r.type == REC_REVERSAL ? "reversal" : (isReversed(bits, r.seq) ? "reversed" : "valid"),
-                   (unsigned long)r.ts, r.symbol, r.date, r.qty, r.price,
-                   refPx,
-                   r.priceSource == PRICE_YAHOO ? "yahoo" : "manual",
-                   r.fee, r.gross, r.net, r.cost, r.realised,
-                   (unsigned long)r.refSeq, r.refId, lots);
-  if (n < 0) return;
-  if ((size_t)n >= sizeof line) n = (int)sizeof line - 1;
-  sink(ctx, line, (size_t)n);
+  char line[832];                                      // sized for the worst-case row (see sale::csvLineStr)
+  bool rev = r.type == REC_SALE && isReversed(bits, r.seq);
+  size_t n = sale::csvLineStr(r, rev, line, sizeof line);
+  if (n) sink(ctx, line, n);
 }
 
 bool saleCsv(const AppState &a, const char *symbol, CsvSink sink, void *ctx, char *err, size_t errN) {

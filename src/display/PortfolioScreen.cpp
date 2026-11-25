@@ -14,7 +14,7 @@ void drawPortfolio(Ui &u, const AppState &a, bool full) {
   Arduino_GFX *g = u.gfx();
   const PortfolioSummary &s = a.summary;
   char b[40], c[40];
-  drawHeader(u, a, "S&P 500 Portfolio", 0, full);
+  drawHeader(u, a, "S&P 500", 0, full);   // "Portfolio" dropped: the header clock needs the room
 
   // ---- NAV: the largest number on the page
   u.text(1, "PORTFOLIO NAV", 1, 8, 28, A_LEFT, C_MUTED);
@@ -22,7 +22,7 @@ void drawPortfolio(Ui &u, const AppState &a, bool full) {
   else {
     u.eraseSlot(9);
     static const uint8_t navSz[] = {3, 2};
-    fmtThb(b, sizeof b, s.nav);                                   // "N/A" when any quote is missing: never a made-up total
+    fmtThb(b, sizeof b, s.nav, 0);   // whole baht like the invested figure; "N/A" when any quote is missing: never a made-up total
     u.fit(2, b, navSz, 2, 224, 8, 43, A_LEFT, isNum(s.nav) ? C_TEXT : C_MUTED);
   }
   if (s.count && !s.complete && s.invalid < s.count) u.text(3, s.priced ? "INCOMPLETE" : "NO QUOTES", 1, 232, 28, A_RIGHT, C_WARN);
@@ -38,12 +38,12 @@ void drawPortfolio(Ui &u, const AppState &a, bool full) {
   u.text(4, "Unrealised P/L", 1, 16, 79, A_LEFT, C_MUTED, C_PANEL);
   fmtPct(c, sizeof c, s.retPct);
   u.text(6, c, 2, 224, 77, A_RIGHT, signColor(s.retPct), C_PANEL);
-  fmtThbSigned(b, sizeof b, s.pl);
+  fmtThbSigned(b, sizeof b, s.pl, 0);   // P/L in whole baht (cents stay in the per-position table)
   static const uint8_t plSz[] = {3, 2, 1};
   u.fit(5, b, plSz, 3, 208, 16, 94, A_LEFT, signColor(s.pl), C_PANEL);
 
   u.text(7, "Invested", 1, 16, 133, A_LEFT, C_MUTED, C_PANEL);
-  fmtThb(b, sizeof b, s.invested);
+  fmtThb(b, sizeof b, s.invested, 0);   // whole baht: capital put in is a round number by how it was bought
   static const uint8_t invSz[] = {2, 1};
   u.fit(8, b, invSz, 2, 126, 16, 148, A_LEFT, C_TEXT, C_PANEL);
   u.text(17, "Positions", 1, 164, 133, A_LEFT, C_MUTED, C_PANEL);

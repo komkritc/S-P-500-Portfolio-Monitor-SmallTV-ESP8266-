@@ -3,15 +3,19 @@
 #include <string.h>
 #include <stdio.h>
 
-void YahooParser::begin(uint32_t *tsBuf, float *closeBuf, uint16_t cap) {
+void YahooParser::begin(uint32_t *tsBuf, float *closeBuf, uint16_t cap, int16_t *wBuf, uint16_t wCap) {
   price = prevClose = dayHigh = dayLow = open = NAN;
   prevClose2_ = NAN;
   marketTime = 0; gmtOffset = 0; count = 0;
   tz[0] = 0; symbol[0] = 0; tzName[0] = 0; errCode_[0] = 0; err_[0] = 0;
   ts_ = tsBuf; cl_ = closeBuf; cap_ = cap;
+  w_ = wBuf; wCap_ = wBuf ? wCap : 0;
   tsN_ = clN_ = 0;
   overflow_ = resultNull_ = haveResult_ = haveOpen_ = false;
   if (cl_) for (uint16_t i = 0; i < cap_; i++) cl_[i] = NAN;
+  // Candles start invalid; a bar keeps its candle only if Yahoo actually sent open, high and low
+  // for it. Not clearing this would let a short response inherit the previous fetch's bars.
+  if (w_) for (uint16_t i = 0; i < 3u * wCap_; i++) w_[i] = OHLC_BAD;
   js_.begin(&YahooParser::onEvent, this);
 }
 
@@ -60,6 +64,11 @@ void YahooParser::handle(const char *path, int idx, JsonKind k, const char *text
     if (k == JK_NUM) cl_[idx] = (float)num(text);   // null stays NaN
   } else if (!strcmp(p, ".indicators.quote[].open[]")) {
     if (k == JK_NUM && !haveOpen_) { open = num(text); haveOpen_ = true; }   // first bar of the range = session open
+    if (w_ && (uint16_t)idx < wCap_) w_[idx] = k == JK_NUM ? ohlcPack((float)num(text)) : OHLC_BAD;
+  } else if (!strcmp(p, ".indicators.quote[].high[]")) {
+    if (w_ && (uint16_t)idx < wCap_) w_[wCap_ + idx] = k == JK_NUM ? ohlcPack((float)num(text)) : OHLC_BAD;
+  } else if (!strcmp(p, ".indicators.quote[].low[]")) {
+    if (w_ && (uint16_t)idx < wCap_) w_[2u * wCap_ + idx] = k == JK_NUM ? ohlcPack((float)num(text)) : OHLC_BAD;
   }
 }
 

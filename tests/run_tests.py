@@ -20,4 +20,17 @@ for name, extra in suites:
     subprocess.check_call(cmd + ["-std=c++17", "-O1", "-g", "-Wall", "-Wextra", "-fsanitize=undefined",
                                  "-o", exe] + files)
     rc |= subprocess.call([exe, os.path.join(here, "fixtures")])
+
+# Dashboard integrity: the page is one inline script, so a duplicate top-level declaration ships a
+# blank dashboard while every API endpoint still answers (fw 1.2.3 did exactly that). These need
+# node; they are reported as skipped rather than silently omitted when node is missing.
+node = shutil.which("node")
+for js in ("web_ui_check.js", "bbands_check.js", "add_flow_check.js"):
+    p = os.path.join(here, js)
+    if not os.path.exists(p):
+        continue
+    if node:
+        rc |= subprocess.call([node, p])
+    else:
+        print("note: node not on PATH - skipped", js)
 sys.exit(rc)

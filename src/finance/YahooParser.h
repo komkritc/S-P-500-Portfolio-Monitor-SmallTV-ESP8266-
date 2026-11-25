@@ -10,7 +10,10 @@ class YahooParser {
  public:
   // tsBuf/closeBuf (capacity `cap`) receive timestamp[] and close[]; either may be null if the
   // caller does not need the series.
-  void begin(uint32_t *tsBuf, float *closeBuf, uint16_t cap);
+  // wBuf/wCap additionally collect the bar candles as three packed arrays of ohlcPack'ed int16
+  // (opens, then highs, then lows, indexed by raw bar index). Only asked for by the chart fetches
+  // that want candles; bars Yahoo leaves null (or that overflow wCap) stay OHLC_BAD.
+  void begin(uint32_t *tsBuf, float *closeBuf, uint16_t cap, int16_t *wBuf = nullptr, uint16_t wCap = 0);
   bool feed(const char *data, size_t len) { return js_.feed(data, len); }
   // true when the body was complete valid JSON containing a usable result. On false, error() says why.
   bool finish();
@@ -30,7 +33,8 @@ class YahooParser {
   JsonStream js_;
   uint32_t *ts_ = nullptr;
   float *cl_ = nullptr;
-  uint16_t cap_ = 0, tsN_ = 0, clN_ = 0;
+  int16_t *w_ = nullptr;          // opens[wCap_], highs[wCap_], lows[wCap_] - packed, never downsampled
+  uint16_t cap_ = 0, tsN_ = 0, clN_ = 0, wCap_ = 0;
   bool overflow_ = false, resultNull_ = false, haveResult_ = false, haveOpen_ = false;
   double prevClose2_ = NAN;
   char errCode_[24];

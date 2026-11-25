@@ -118,19 +118,21 @@ struct BufW { uint8_t *p; size_t n, cap; bool bad;
   void put(const void *d, size_t l) { if (n + l > cap) { bad = true; return; } memcpy(p + n, d, l); n += l; } };
 
 bool saveCache(const AppState &a) {
-  size_t cap = sizeof(CacheHdr) + sizeof(SymQuote) * MAX_SYMBOLS + sizeof(SP500Quote) + RANGE_COUNT * 16 + CHART_POOL * 8 + 4;
+  size_t cap = sizeof(CacheHdr) + sizeof(SymQuote) * MAX_SYMBOLS + sizeof(SP500Quote) + RANGE_COUNT * 18 + CHART_POOL * 8 + OHLC_POOL * 2 + 4;
   uint8_t *buf = (uint8_t *)malloc(cap);
   if (!buf) return false;
   BufW w{buf, 0, cap, false};
-  CacheHdr h{CACHE_MAGIC, 3, a.book.n, (uint16_t)sizeof(SymQuote), (uint16_t)sizeof(SP500Quote)};
+  CacheHdr h{CACHE_MAGIC, 4, a.book.n, (uint16_t)sizeof(SymQuote), (uint16_t)sizeof(SP500Quote)};
   w.put(&h, sizeof h);
   w.put(a.book.q, sizeof(SymQuote) * a.book.n);
   w.put(&a.sp, sizeof a.sp);
   for (uint8_t r = 0; r < RANGE_COUNT; r++) {
     const Chart &c = a.charts[r];
     uint16_t n = c.valid ? c.n : 0;
-    w.put(&n, 2); w.put(&c.base, 4); w.put(&c.okEpoch, 4);
+    uint16_t hasW = c.w && n ? 1u : 0u;
+    w.put(&n, 2); w.put(&c.base, 4); w.put(&c.okEpoch, 4); w.put(&hasW, 2);
     w.put(c.t, (size_t)n * 4); w.put(c.v, (size_t)n * 4);
+    if (hasW) w.put(c.w, (size_t)n * 6);      // packed candles travel with the bars they belong to
   }
   uint32_t crc = crc32(buf, w.n) ^ 0xFFFFFFFF;
   w.put(&crc, 4);
@@ -140,7 +142,7 @@ bool saveCache(const AppState &a) {
 }
 
 bool loadCache(AppState &a) {
-  size_t n; char *b = readAll("/cache.bin", n, 8192);
+  size_t n; char *b = readAll("/cache.bin", n, 12288);
   if (!b) return false;
   const uint8_t *p = (const uint8_t *)b;
   bool ok = false;
@@ -149,19 +151,22 @@ bool loadCache(AppState &a) {
     uint32_t crc; memcpy(&crc, p + n - 4, 4);
     if ((crc32(p, n - 4) ^ 0xFFFFFFFF) != crc) break;
     CacheHdr h; memcpy(&h, p, sizeof h);
-    if (h.magic != CACHE_MAGIC || h.version != 3 || h.sizeofQuote != sizeof(SymQuote) || h.sizeofSp != sizeof(SP500Quote) || h.nq > MAX_SYMBOLS) break;
+    if (h.magic != CACHE_MAGIC || h.version != 4 || h.sizeofQuote != sizeof(SymQuote) || h.sizeofSp != sizeof(SP500Quote) || h.nq > MAX_SYMBOLS) break;
     size_t o = sizeof h, end = n - 4;
     if (o + (size_t)h.nq * sizeof(SymQuote) + sizeof(SP500Quote) > end) break;
     SymQuote q[MAX_SYMBOLS]; memcpy(q, p + o, sizeof(SymQuote) * h.nq); o += sizeof(SymQuote) * h.nq;
     SP500Quote sp; memcpy(&sp, p + o, sizeof sp); o += sizeof sp;
     // charts: validate everything before touching the live state
     uint16_t cn[RANGE_COUNT]; float cb[RANGE_COUNT]; uint32_t ce[RANGE_COUNT]; size_t toff[RANGE_COUNT];
+    uint16_t cw[RANGE_COUNT]; size_t woff[RANGE_COUNT];
     bool good = true;
     for (uint8_t r = 0; r < RANGE_COUNT && good; r++) {
-      if (o + 10 > end) { good = false; break; }
-      memcpy(&cn[r], p + o, 2); memcpy(&cb[r], p + o + 2, 4); memcpy(&ce[r], p + o + 6, 4); o += 10;
-      if (cn[r] > RANGE_CAP[r] || o + (size_t)cn[r] * 8 > end) { good = false; break; }
+      if (o + 12 > end) { good = false; break; }
+      memcpy(&cn[r], p + o, 2); memcpy(&cb[r], p + o + 2, 4); memcpy(&ce[r], p + o + 6, 4); memcpy(&cw[r], p + o + 10, 2); o += 12;
+      if (cn[r] > RANGE_CAP[r] || cw[r] > 1 || o + (size_t)cn[r] * 8 > end) { good = false; break; }
       toff[r] = o; o += (size_t)cn[r] * 8;
+      woff[r] = o;
+      if (cw[r]) { if (o + (size_t)cn[r] * 6 > end) { good = false; break; } o += (size_t)cn[r] * 6; }
     }
     if (!good) break;
     // apply: everything loaded from flash is marked fromCache -> stale until refreshed this boot
@@ -177,6 +182,7 @@ bool loadCache(AppState &a) {
       if (cn[r] < 2) continue;
       memcpy(c.t, p + toff[r], (size_t)cn[r] * 4);
       memcpy(c.v, p + toff[r] + (size_t)cn[r] * 4, (size_t)cn[r] * 4);
+      if (c.w && cw[r]) memcpy(c.w, p + woff[r], (size_t)cn[r] * 6);
       c.n = cn[r]; c.base = cb[r]; c.okEpoch = ce[r]; c.valid = true; c.failed = false; c.fromCache = true; c.okMs = 0;
     }
     ok = true;

@@ -58,6 +58,11 @@ th.s{cursor:pointer}th.s:hover{color:var(--acc)}
 .n{text-align:right}
 tfoot td,tr.tot td{font-weight:700;border-top:1px solid var(--bd2);border-bottom:0}
 .rg{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.bbt{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;cursor:pointer;margin-left:8px}
+.bbt input{width:auto;margin:0;accent-color:var(--acc)}
+.bbsel{width:auto;margin:0;padding:6px 8px;font-size:12px}
+.bbsw{display:inline-block;width:10px;height:2px;border-radius:1px;background:var(--acc2);vertical-align:middle;margin-left:8px}
+.cksw{display:inline-block;width:6px;height:11px;border-radius:1px;background:linear-gradient(var(--up) 50%,var(--down) 50%);vertical-align:middle;margin-left:8px}
 .btn{background:var(--raised);color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:7px 14px;font:inherit;cursor:pointer}
 .btn:hover:not(:disabled){border-color:var(--acc)}
 .btn:disabled{opacity:.5;cursor:default}
@@ -108,6 +113,17 @@ dt{color:var(--muted)}dd{margin:0;word-break:break-word}
 #ts div.e{background:var(--dnbg2);border-color:var(--down)}
 #ov{position:fixed;inset:0;background:var(--ovl);z-index:30;display:none;align-items:center;justify-content:center;text-align:center;padding:20px}
 #ov.on{display:flex}
+#cf{position:fixed;inset:0;background:rgba(2,6,12,.62);z-index:40;display:none;align-items:center;justify-content:center;padding:16px}
+#cf.on{display:flex}
+#cf>div{background:var(--panel);border:1px solid var(--bd);border-radius:10px;width:100%;max-width:420px;padding:16px;text-align:left;box-shadow:0 14px 44px rgba(0,0,0,.5)}
+#cf h3{margin:0;font-size:16px}
+#cf .sb{color:var(--muted);font-size:12px;margin:3px 0 12px}
+#cf .kv{display:grid;grid-template-columns:1fr auto;gap:7px 12px;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:10px}
+#cf .kv span{color:var(--muted)}
+#cf .kv b{font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+#cf .wn{background:var(--warnbg);border:1px solid var(--warnbd);color:var(--warntx);border-radius:6px;padding:8px 10px;font-size:12px;margin-bottom:10px;line-height:1.45}
+#cf .ft{display:flex;gap:8px;justify-content:flex-end}
+#cf .ft .btn{min-width:104px}
 @media(max-width:900px){.cols{grid-template-columns:1fr}}
 @media(max-width:700px){
 main{padding:10px}header{padding:8px 10px 0}
@@ -147,7 +163,7 @@ dl{grid-template-columns:1fr;gap:0}dd{margin-bottom:6px}
 <section id="market" class="tab">
 <div class="panel"><h2>S&amp;P 500 Index</h2><div id="mqp"></div></div>
 <div class="panel">
-<div class="rg" id="rg"><button class="btn" data-r="1d">1D</button><button class="btn" data-r="5d">5D</button><button class="btn" data-r="1mo">1M</button></div>
+<div class="rg" id="rg"><button class="btn" data-r="1d">1D</button><button class="btn" data-r="5d">5D</button><button class="btn" data-r="1mo">1M</button><label class="bbt" id="ckw" title="Candlesticks (1M bars)"><span class="cksw"></span>Candles<input type="checkbox" id="ck-on"></label><label class="bbt" title="Bollinger Bands"><span class="bbsw"></span>BB<input type="checkbox" id="bb-on"></label><select id="bb-p" class="bbsel" title="BB period (SMA)"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option></select><select id="bb-k" class="bbsel" title="BB width (std dev multiplier)"><option value="1.5">1.5&sigma;</option><option value="2" selected>2&sigma;</option><option value="2.5">2.5&sigma;</option></select></div>
 <div id="cw"><canvas id="cv"></canvas><div id="tt"></div></div>
 <div class="qt" style="margin:10px 0 0"><span id="ch-sel" class="g"></span><span id="ch-chg" class="c"></span></div>
 <div class="qt g" style="margin:4px 0 0"><span id="ch-upd"></span><span class="b b-stale" id="ch-stale" hidden></span></div>
@@ -168,8 +184,8 @@ dl{grid-template-columns:1fr;gap:0}dd{margin-bottom:6px}
 <label>Quantity<input id="a-qty" type="number" step="any" min="0" inputmode="decimal"></label>
 <label>Buy price (index points)<input id="a-buy" type="number" step="any" min="0" inputmode="decimal"></label>
 </div></details>
-<div class="g" style="font-size:12px;margin-bottom:8px">With a THB amount the device looks up the closing price on that date (may take a few seconds). The same symbol and date updates the existing row.</div>
-<button class="btn p" id="a-go" type="submit">Add position</button> <span id="a-msg"></span>
+<div class="g" style="font-size:12px;margin-bottom:8px">THB amount: the device finds the close on that date (or the close of the last session before it, and it says which). Nothing is saved until you confirm in the dialog. Same symbol and date updates the existing row.</div>
+<div class="row"><button class="btn p" id="a-go" type="submit">Look up close price</button> <span id="a-msg"></span></div>
 </form></div>
 </section>
 
@@ -266,6 +282,18 @@ If the device cannot join your Wi-Fi (or has no saved network) it starts its own
 </main>
 <div id="ts"></div>
 <div id="ov"><div><div class="sp" style="width:28px;height:28px"></div><p id="ov-t" class="hl"></p></div></div>
+<div id="cf"><div role="dialog" aria-modal="true" aria-labelledby="cf-t">
+<h3 id="cf-t">Confirm this purchase</h3><div class="sb" id="cf-sub"></div>
+<div class="kv">
+<span>Amount paid</span><b id="cf-thb"></b>
+<span>Close price</span><b id="cf-buy"></b>
+<span>Priced from</span><b id="cf-day"></b>
+<span>Quantity</span><b id="cf-qty"></b>
+<span>Cost basis</span><b id="cf-cost"></b>
+</div>
+<div class="wn" id="cf-wn" hidden></div>
+<div class="ft"><button class="btn" id="cf-no" type="button">Cancel</button><button class="btn p" id="cf-yes" type="button">Confirm and add</button></div>
+</div></div>
 <script>
 'use strict';
 const $=i=>document.getElementById(i),sl=ms=>new Promise(r=>setTimeout(r,ms));
@@ -277,7 +305,7 @@ function d2i(s){const m=/^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s||'');if(!m)return n
 if(y<1970||t.getUTCFullYear()!=y||t.getUTCMonth()!=mo-1||t.getUTCDate()!=d)return null;return m[3]+'-'+m[2]+'-'+m[1]}
 const NA='N/A',TABS=['portfolio','market','details','sales','wifi','settings','system'];
 const nf=(x,d)=>x==null||!isFinite(x)?NA:Number(x).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
-const thb=(x,s)=>x==null?NA:(x<0?'-':s&&x>0?'+':'')+'THB '+nf(Math.abs(x),2);
+const thb=(x,s,d)=>x==null?NA:(x<0?'-':s&&x>0?'+':'')+'THB '+nf(Math.abs(x),d==null?2:d);  // d=0 -> whole baht (invested capital)
 const pts=(x,s)=>x==null?NA:(s&&x>0?'+':'')+nf(x,2);
 const pc=x=>x==null?NA:(x>0?'+':'')+nf(x,2)+'%';
 const age=s=>s<0?'0s':s<60?Math.round(s)+'s':s<3600?Math.floor(s/60)+'m':s<86400?Math.floor(s/3600)+'h '+Math.floor(s%3600/60)+'m':Math.floor(s/86400)+'d '+Math.floor(s%86400/3600)+'h';
@@ -346,8 +374,8 @@ async function ldMarket(){const m=await api('/api/market');MK=m;rQ('ix',m);rQ('m
 /* ---- portfolio ---- */
 function rPf(d){
 const s=d.summary||{};
-set('c-nav',thb(s.nav));set('c-pl',thb(s.pl,1),s.pl||0);set('c-ret',pc(s.returnPct),s.returnPct||0);set('c-inv',thb(s.invested));
-set('c-rpl',thb(s.realisedPl,1),s.realisedPl||0);set('c-lpl',thb(s.lifetimePl,1),s.lifetimePl||0);
+set('c-nav',thb(s.nav,0,0));set('c-pl',thb(s.pl,1,0),s.pl||0);set('c-ret',pc(s.returnPct),s.returnPct||0);set('c-inv',thb(s.invested,0,0));
+set('c-rpl',thb(s.realisedPl,1,0),s.realisedPl||0);set('c-lpl',thb(s.lifetimePl,1,0),s.lifetimePl||0);
 set('c-rpl-s',s.realisedPl==null?'ledger not read yet':'all time');
 set('c-upd','('+lt(d.updated)+')');stB('pf-stale',s.stale,d.updated);
 const i=$('pf-inc');i.hidden=s.complete!==false;
@@ -382,13 +410,37 @@ cols.forEach(c=>{const td=E('td',(c.n?'n ':'')+(c.h?'hm':''));if(c.b)td.append(E
 if(full){const td=E('td','n'),b=E('button','btn x','\u00d7');b.title='Delete';b.onclick=()=>delPos(r,b);td.append(b);tr.append(td)}
 bd.append(tr)});
 if(full&&DP.summary){const s=DP.summary,tr=E('tr','tot');
-cols.forEach(c=>{const td=E('td',c.n?'n':'');const m={symbol:'TOTAL',cost:thb(s.invested),nav:thb(s.nav),pl:thb(s.pl,1),returnPct:pc(s.returnPct)};td.textContent=m[c.k]||'';
+cols.forEach(c=>{const td=E('td',c.n?'n':'');const m={symbol:'TOTAL',cost:thb(s.invested,0,0),nav:thb(s.nav,0,0),pl:thb(s.pl,1,0),returnPct:pc(s.returnPct)};td.textContent=m[c.k]||'';
 if(c.k=='pl'&&s.pl>0||c.k=='returnPct'&&s.returnPct>0)td.classList.add('pos');if(c.k=='pl'&&s.pl<0||c.k=='returnPct'&&s.returnPct<0)td.classList.add('neg');tr.append(td)});
 tr.append(E('td'));bd.append(tr)}}
 async function ldPos(){DP=await api('/api/positions');rpos($('pt'),CK);rpos($('dt'),PC.map(c=>c.k),1)}
 async function delPos(r,b){
 if(!confirm('Delete position '+r.symbol+' ('+i2d(r.date)+')?'))return;
 b.disabled=true;try{await api('/api/positions/delete',{index:r.i});toast('Position deleted');await ldPos()}catch(e){toast(e.message,1);b.disabled=false}}
+let AV=null,PE='Quantity and buy price must both be positive numbers';
+const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const dday=s=>{const p=/^(\d{4})-(\d\d)-(\d\d)$/.exec(s||'');if(!p)return i2d(s);
+  return DOW[new Date(Date.UTC(+p[1],+p[2]-1,+p[3])).getUTCDay()]+' '+i2d(s)};
+const amsg=(t,c)=>{const m=$('a-msg');m.className=c||'g';m.textContent=t||''};
+// The dialog IS the feature: it names the session the close came from, so a purchase dated on a
+// weekend or holiday can never be booked quietly against some older close.
+function cfOpen(){const a=AV;$('cf-sub').textContent=a.sym+' on '+i2d(a.date);
+$('cf-thb').textContent=thb(a.thb,0,0);$('cf-buy').textContent=nf(a.buy,2)+' pts';
+$('cf-day').textContent=dday(a.priceDate);$('cf-qty').textContent=nf(a.qty,6);
+$('cf-cost').textContent=thb(a.qty*a.buy,0,0);
+const w=$('cf-wn');
+if(a.exact)w.hidden=true;else{w.hidden=false;
+w.innerHTML='<b>'+i2d(a.date)+' was not a trading day.</b> The close of the last session before it, <b>'+dday(a.priceDate)+'</b>, prices this purchase. Cancel to change the date or the amount.'}
+$('cf-yes').disabled=false;$('cf').classList.add('on');$('cf-yes').focus()}
+const cfShut=()=>$('cf').classList.remove('on');
+$('cf-no').onclick=()=>{cfShut();AV=null;amsg('Cancelled - nothing was saved','ok')};
+$('cf').onclick=e=>{if(e.target.id=='cf')$('cf-no').click()};
+document.addEventListener('keydown',e=>{if(e.key=='Escape'&&$('cf').classList.contains('on'))$('cf-no').click()});
+$('cf-yes').onclick=async()=>{const a=AV;if(!a)return;$('cf-yes').disabled=true;
+try{await api('/api/positions',{symbol:a.sym,date:a.date,qty:a.qty,buy:a.buy});
+cfShut();AV=null;toast('Position added');amsg(a.sym+' '+nf(a.qty,6)+' at '+nf(a.buy,2)+' added','ok');
+$('a-thb').value=$('a-qty').value=$('a-buy').value='';await ldPos()}
+catch(e){cfShut();AV=null;amsg(e.message,'er')}};
 $('af').onsubmit=async ev=>{ev.preventDefault();
 const m=$('a-msg'),go=$('a-go');m.className='er';m.textContent='';
 const sym=$('a-sym').value.trim().toUpperCase(),date=d2i($('a-date').value.trim()),thbv=$('a-thb').value,q=$('a-qty').value,bp=$('a-buy').value;
@@ -397,13 +449,17 @@ if(!date){$('a-date').classList.add('bad');return m.textContent='Enter the purch
 $('a-date').classList.remove('bad');
 if(date>todayISO())return m.textContent='Date is in the future';
 let b={symbol:sym,date};
-if(q||bp){if(!(q>0&&bp>0))return m.textContent='Quantity and buy price must both be positive numbers';b.qty=+q;b.buy=+bp}
-else{if(!(thbv>0))return m.textContent='Enter a THB amount greater than 0';b.thb=+thbv}
-go.disabled=true;m.className='g';m.textContent='Adding...';
+// A THB amount is never booked on faith: the close is looked up first and put in front of the user.
+if(q||bp){if(!(q>0&&bp>0))return m.textContent=PE;b.qty=+q;b.buy=+bp}
+else{if(!(thbv>0))return m.textContent='Enter a THB amount greater than 0';b.thb=+thbv;b.preview=1}
+go.disabled=true;m.className='g';m.textContent='Looking up the closing price...';
 try{let r=await api('/api/positions',b);
-if(r.state=='pending'){m.textContent='Looking up closing price...';
-for(let k=0;k<45;k++){await sl(1000);while(document.hidden)await sl(1000);const j=await api('/api/positions/job');if(j.state=='error')throw new Error(j.error||'Lookup failed');if(j.state=='ok'||(j.state=='idle'&&k>2))break;if(k==44)throw new Error('Timed out waiting for the device')}}
-m.className='ok';m.textContent='Position added';toast('Position added');$('a-thb').value=$('a-qty').value=$('a-buy').value='';await ldPos()}
+if(r.state=='pending'){let j=null;
+for(let k=0;k<45;k++){await sl(1000);while(document.hidden)await sl(1000);const x=await api('/api/positions/job');if(x.state=='error')throw new Error(x.error||'Lookup failed');if(x.state=='ok'){j=x;break}if(x.state=='idle'&&k>2)throw new Error('No close price came back');if(k==44)throw new Error('Timed out waiting for the device')}
+if(b.preview){if(!j||!isFinite(j.buy))throw new Error('No close price came back');
+AV={sym,date,thb:+thbv,buy:+j.buy,qty:+j.qty,priceDate:j.priceDate||date,exact:j.exact!==false};
+amsg('Check the dialog \u2014 nothing has been saved yet','ok');go.disabled=false;cfOpen();return}}
+m.className='ok';m.textContent='Position added';toast('Position added');$('a-qty').value=$('a-buy').value='';await ldPos()}
 catch(e){m.className='er';m.textContent=e.message}
 go.disabled=false};
 /* ---- sales: preview -> confirm -> commit, history, undo, CSV ---- */
@@ -413,9 +469,9 @@ const r=await api('/api/realised');rR(r)}
 /* this-year realised P/L: the calendar year in the display time zone (same rule as the LCD); a year with no sale is a real 0 */
 function curYear(){const d=new Date(now()*1000);try{if(fm.dk){const p=fm.dk.formatToParts(d).find(x=>x.type=='year');if(p)return+p.value}}catch(e){}return d.getUTCFullYear()}
 function rYr(r){const cy=curYear(),ok=r&&r.valid,e=ok&&(r.years||[]).find(y=>y.year==cy),v=ok?(e?e.pl:0):null;
-for(const id of['c-rpl-y','r-all-y']){const el=$(id);if(!el)continue;el.textContent='this year ('+cy+'): '+(ok?thb(v,1):NA);el.classList.toggle('pos',ok&&v>0);el.classList.toggle('neg',ok&&v<0)}}
+for(const id of['c-rpl-y','r-all-y']){const el=$(id);if(!el)continue;el.textContent='this year ('+cy+'): '+(ok?thb(v,1,0):NA);el.classList.toggle('pos',ok&&v>0);el.classList.toggle('neg',ok&&v<0)}}
 function rR(r){rYr(r);
-set('r-all',r.valid?thb(r.pl,1):NA,r.pl||0);
+set('r-all',r.valid?thb(r.pl,1,0):NA,r.pl||0);
 set('r-all-s',r.valid?(r.count+' sale'+(r.count==1?'':'s')+(r.reversed?' \u00b7 '+r.reversed+' reversed':'')):'ledger not read yet')}
 const VC=[['date','Date',r=>i2d(r.date)],['id','ID',r=>r.id],['symbol','Symbol',r=>r.symbol],['qty','Qty',r=>nf(r.qty,4),1],
 ['price','Price',r=>nf(r.price,2),1],['net','Net',r=>thb(r.net),1],['cost','Cost',r=>thb(r.cost),1],['realised','Realised P/L',r=>thb(r.realised,1),1]];
@@ -449,7 +505,7 @@ b.disabled=true;try{await api('/api/sales/delete',{seq:r.seq});toast('Transactio
 if(DS&&DS.count<=2&&soff>0)soff=Math.max(0,soff-DS.limit);
 await Promise.all([ldPos(),ldSales(),api('/api/portfolio').then(rPf)])}catch(e){toast(e.message,1);b.disabled=false}}
 async function undoSale(r,b){
-if(!confirm('Reverse sale '+r.id+' ('+i2d(r.date)+', '+thb(r.realised,1)+')?\n\nA reversal record is appended to the ledger; nothing is deleted.'))return;
+if(!confirm('Reverse sale '+r.id+' ('+i2d(r.date)+', '+thb(r.realised,1)+')?\n\nA reversal record is appended to the ledger; nothing is deleted. It books to the sale\'s own year, so "this year" figures do not change.'))return;
 b.disabled=true;try{await api('/api/sales/reverse',{seq:r.seq});toast('Sale reversed');
 await Promise.all([ldPos(),ldSales(),api('/api/portfolio').then(rPf)])}catch(e){toast(e.message,1);b.disabled=false}}
 function fillLots(){const s=$('v-sym').value.trim().toUpperCase(),l=$('v-lot');l.replaceChildren();
@@ -514,6 +570,22 @@ theme(document.documentElement.dataset.theme||'dark');
 /* ---- chart ---- */
 const RL={'1d':'1D','5d':'5D','1mo':'1M'};
 let range='1d',CC={},fl={},hov=-1,cv=$('cv'),cx=cv.getContext('2d'),W=0,H=0;
+/* Bollinger Bands state, persisted per browser (localStorage), never on the device */
+let BB=(function(){let o;try{o=JSON.parse(localStorage.getItem('sp500.bb'))||{}}catch(e){o={}}
+return{on:!!o.on,p:[10,20,50].includes(+o.p)?+o.p:20,k:[1.5,2,2.5].includes(+o.k)?+o.k:2}})();
+function bbSave(){try{localStorage.setItem('sp500.bb',JSON.stringify(BB))}catch(e){}}
+/* Candlesticks: browser-side choice, per browser, never stored on the device. The bars themselves
+   come from the device (1M only, packed int16 - see the candlestick note in AppTypes.h), so this
+   control hides itself on ranges the device does not send candles for. */
+let CKS=(function(){let o;try{o=JSON.parse(localStorage.getItem('sp500.ck'))||{}}catch(e){o={}}
+return{on:o.on!==false}})();
+function ckSave(){try{localStorage.setItem('sp500.ck',JSON.stringify(CKS))}catch(e){}}
+function bbands(v,p,k){/* SMA(p) +/- k*sd, running sum/sum-of-squares, O(n); leading p-1 points null */
+const n=v.length,md=Array(n),up=Array(n),dn=Array(n);let s=0,q=0;
+for(let i=0;i<n;i++){s+=v[i];q+=v[i]*v[i];if(i>=p){const x=v[i-p];s-=x;q-=x*x}
+if(i>=p-1){const m=s/p,sd=Math.sqrt(Math.max(0,q/p-m*m));md[i]=m;up[i]=m+k*sd;dn[i]=m-k*sd}
+else md[i]=up[i]=dn[i]=null}
+return{md,up,dn,p,k}}
 const PL=58,PT=10,PB=24,PR=10;
 function ensureS(){return S?Promise.resolve():(fl.s||(fl.s=api('/api/settings').then(applyS).finally(()=>delete fl.s)))}
 function applyS(s){S=s;tzm=s.tzMode;tzo=s.localOffsetMin||0;mkfmt();for(const k in CC)CC[k].tk=null;
@@ -523,7 +595,7 @@ async function ldMarketTab(){await ensureS();if(cur=='market'){sizeCv();rChart()
 function ldChart(force){
 const r=range;if(!S)return ensureS().then(()=>ldChart(force));
 const c=CC[r];if(!force&&c&&Date.now()-c.at<60000)return Promise.resolve();
-return fl[r]||(fl[r]=api('/api/chart?range='+r+'&max='+(innerWidth<600?200:400)).then(d=>{CC[r]={d,at:Date.now()-(d.valid?0:50000)};if(r==range)rChart()}).finally(()=>delete fl[r]))}
+return fl[r]||(fl[r]=api('/api/chart?range='+r+'&max='+(innerWidth<600?200:400)+'&ohlc=1').then(d=>{CC[r]={d,at:Date.now()-(d.valid?0:50000)};if(r==range)rChart()}).finally(()=>delete fl[r]))}
 function sizeCv(){const r=cv.getBoundingClientRect(),p=window.devicePixelRatio||1;W=r.width;H=r.height;cv.width=Math.round(W*p);cv.height=Math.round(H*p);cx.setTransform(p,0,0,p,0,0)}
 function ticks(c){
 const d=c.d,t=d.t,o=[],sp=[];let pk=null,ph=null;
@@ -538,6 +610,7 @@ set('ch-sel','Selected period: '+RL[range]);
 set('ch-chg',v?pts(d.change,1)+' pts ('+pc(d.changePct)+')':NA,v?(d.change>=0?1:-1):0);
 set('ch-upd','Last successful update: '+(d&&d.updated?mt(d.updated):'never'));
 stB('ch-stale',d&&d.stale,d&&d.updated);
+$('ckw').style.display=d&&d.candles?'':'none';
 draw()}
 function draw(){
 if(!W)return;cx.clearRect(0,0,W,H);
@@ -545,7 +618,11 @@ const c=CC[range],d=c&&c.d;cx.font='11px system-ui,Segoe UI,Arial,sans-serif';
 if(!d||!d.valid||d.count<2){cx.fillStyle=C('--muted');cx.textAlign='center';cx.fillText(c?'No chart data available (N/A)':'Loading...',W/2,H/2);return}
 if(!c.tk)ticks(c);
 const v=d.v,n=v.length,pw=W-PL-PR,ph=H-PT-PB,base=range=='1d'&&d.base!=null?d.base:null;
+let bb=null;if(BB.on){if(!c.bb||c.bb.p!=BB.p||c.bb.k!=BB.k)c.bb=bbands(v,BB.p,BB.k);bb=c.bb}
 let mn=Math.min.apply(null,v),mx=Math.max.apply(null,v);if(base!=null){mn=Math.min(mn,base);mx=Math.max(mx,base)}
+const ck=CKS.on&&d.candles&&d.o&&d.h&&d.l?d:null;   // candles replace the line: the body's lower/upper edge is the close
+if(ck)for(let i=0;i<n;i++){if(ck.h[i]!=null&&ck.h[i]>mx)mx=ck.h[i];if(ck.l[i]!=null&&ck.l[i]<mn)mn=ck.l[i]}
+if(bb){for(let i=BB.p-1;i<n;i++){if(bb.up[i]>mx)mx=bb.up[i];if(bb.dn[i]<mn)mn=bb.dn[i]}}
 const pd=(mx-mn)*.08||1,lo=mn-pd,hi=mx+pd,X=i=>PL+pw*i/(n-1),Y=x=>PT+ph*(1-(x-lo)/(hi-lo)),col=d.change>=0?C('--up'):C('--down');
 cx.lineWidth=1;cx.strokeStyle=C('--line');cx.fillStyle=C('--muted');cx.textAlign='right';cx.textBaseline='middle';
 for(let k=0;k<5;k++){const x=lo+(hi-lo)*k/4,y=Y(x);cx.beginPath();cx.moveTo(PL,y+.5);cx.lineTo(W-PR,y+.5);cx.stroke();cx.fillText(nf(x,hi-lo<20?2:0),PL-6,y)}
@@ -555,13 +632,37 @@ cx.strokeStyle=C('--dash');cx.setLineDash([3,3]);
 for(const i of c.sp){const x=Math.round(X(i-.5))+.5;cx.beginPath();cx.moveTo(x,PT);cx.lineTo(x,H-PB);cx.stroke()}
 if(base!=null){const y=Math.round(Y(base))+.5;cx.beginPath();cx.moveTo(PL,y);cx.lineTo(W-PR,y);cx.stroke()}
 cx.setLineDash([]);
+if(ck){/* one bar per point: wick from low to high, body open->close, filled by direction.
+          A bar the device could not supply a candle for is drawn as a short close tick, never as
+          a doji - the null is shown as missing data, not invented as a flat bar. */
+const bw=Math.max(1.5,Math.min(9,pw/n*0.62));
+for(let i=0;i<n;i++){const x=Math.round(X(i))+.5,o=ck.o[i];
+if(o==null){cx.strokeStyle=col;cx.lineWidth=1.4;cx.beginPath();cx.moveTo(x-2.5,Y(v[i]));cx.lineTo(x+2.5,Y(v[i]));cx.stroke();continue}
+const cl=C(v[i]>=o?'--up':'--down');cx.strokeStyle=cl;cx.lineWidth=1;
+cx.beginPath();cx.moveTo(x,Y(ck.h[i]));cx.lineTo(x,Y(ck.l[i]));cx.stroke();
+const y0=Y(Math.max(o,v[i])),bh=Math.max(1,Y(Math.min(o,v[i]))-y0),bx=Math.round(X(i)-bw/2)+.5,bwd=Math.max(1,Math.round(bw));
+cx.fillStyle=cl;cx.fillRect(bx,y0,bwd,bh);cx.strokeRect(bx,Math.round(y0)+.5,bwd,Math.round(bh));}
+}else{
 const g=cx.createLinearGradient(0,PT,0,H-PB);g.addColorStop(0,col+'55');g.addColorStop(1,col+'05');
 cx.beginPath();cx.moveTo(X(0),H-PB);for(let i=0;i<n;i++)cx.lineTo(X(i),Y(v[i]));cx.lineTo(X(n-1),H-PB);cx.closePath();cx.fillStyle=g;cx.fill();
-cx.beginPath();for(let i=0;i<n;i++){i?cx.lineTo(X(i),Y(v[i])):cx.moveTo(X(i),Y(v[i]))}cx.strokeStyle=col;cx.lineWidth=1.6;cx.lineJoin='round';cx.stroke();
+cx.beginPath();for(let i=0;i<n;i++){i?cx.lineTo(X(i),Y(v[i])):cx.moveTo(X(i),Y(v[i]))}cx.strokeStyle=col;cx.lineWidth=1.6;cx.lineJoin='round';cx.stroke();}
+if(bb){/* band fill + upper/lower + dashed middle (SMA), drawn after the price line */
+const i0=BB.p-1;if(i0<n){cx.beginPath();cx.moveTo(X(i0),Y(bb.up[i0]));
+for(let i=i0+1;i<n;i++)cx.lineTo(X(i),Y(bb.up[i]));
+for(let i=n-1;i>=i0;i--)cx.lineTo(X(i),Y(bb.dn[i]));
+cx.closePath();cx.fillStyle=C('--soft')+'1c';cx.fill();
+cx.strokeStyle=C('--soft');cx.lineWidth=1;cx.beginPath();
+for(let i=i0;i<n;i++){i==i0?cx.moveTo(X(i),Y(bb.up[i])):cx.lineTo(X(i),Y(bb.up[i]))}
+cx.moveTo(X(i0),Y(bb.dn[i0]));for(let i=i0+1;i<n;i++)cx.lineTo(X(i),Y(bb.dn[i]));cx.stroke();
+cx.strokeStyle=C('--acc2');cx.setLineDash([4,4]);cx.beginPath();
+for(let i=i0;i<n;i++){i==i0?cx.moveTo(X(i),Y(bb.md[i])):cx.lineTo(X(i),Y(bb.md[i]))}
+cx.stroke();cx.setLineDash([])}}
 const tt=$('tt');
 if(hov>=0&&hov<n){const x=X(hov),y=Y(v[hov]);cx.strokeStyle=C('--muted');cx.lineWidth=1;cx.beginPath();cx.moveTo(Math.round(x)+.5,PT);cx.lineTo(Math.round(x)+.5,H-PB);cx.stroke();
 cx.fillStyle=col;cx.beginPath();cx.arc(x,y,4,0,7);cx.fill();cx.strokeStyle=C('--bg');cx.stroke();
-tt.textContent=fm.md.format(sh(d.t[hov]))+', '+fm.hm.format(sh(d.t[hov]))+'  '+nf(v[hov],2);tt.style.display='block';
+tt.textContent=fm.md.format(sh(d.t[hov]))+', '+fm.hm.format(sh(d.t[hov]))+'  '+nf(v[hov],2);
+if(ck&&ck.o[hov]!=null)tt.textContent+='   O '+nf(ck.o[hov],2)+'  H '+nf(ck.h[hov],2)+'  L '+nf(ck.l[hov],2)+'  C '+nf(v[hov],2);
+if(bb&&bb.up[hov]!=null)tt.textContent+='   BB '+nf(bb.up[hov],2)+' / '+nf(bb.md[hov],2)+' / '+nf(bb.dn[hov],2);tt.style.display='block';
 tt.style.left=x>W/2?'auto':Math.min(x+12,W-130)+'px';tt.style.right=x>W/2?(W-x+12)+'px':'auto'}else tt.style.display='none'}
 function hv(e){const c=CC[range],d=c&&c.d;if(!d||!d.valid||d.count<2)return;const r=cv.getBoundingClientRect();
 hov=Math.max(0,Math.min(d.count-1,Math.round((e.clientX-r.left-PL)/(W-PL-PR)*(d.count-1))));draw()}
@@ -569,6 +670,18 @@ cv.addEventListener('pointermove',hv);cv.addEventListener('pointerdown',hv);
 ['pointerleave','pointercancel'].forEach(n=>cv.addEventListener(n,()=>{hov=-1;draw()}));
 addEventListener('resize',()=>{if(cur=='market'){sizeCv();draw()}});
 $('rg').onclick=e=>{const r=e.target.dataset&&e.target.dataset.r;if(!r)return;range=r;hov=-1;rChart();ldChart().catch(()=>{})};
+/* BB controls: browser-only, stored in localStorage. The device never sees them and
+   keeps no BB state, so nothing here costs heap. Bands come from the closes /api/chart
+   already sends; the period is clamped to the data (fewer points than the period -> no bands). */
+$('bb-on').checked=BB.on;$('bb-p').value=BB.p;$('bb-k').value=BB.k;
+$('bb-on').onchange=e=>{BB.on=e.target.checked;bbSave();draw()};
+$('bb-p').onchange=e=>{BB.p=+e.target.value;bbSave();draw()};
+$('bb-k').onchange=e=>{BB.k=+e.target.value;bbSave();draw()};
+/* Candles: only the choice lives in the browser; the bars come from /api/chart?ohlc=1. The control
+   is hidden when the served chart has no candles (see rChart), so 1D/5D cannot be tricked into
+   drawing something the device never sent. */
+$('ck-on').checked=CKS.on;
+$('ck-on').onchange=e=>{CKS.on=e.target.checked;ckSave();draw()};
 /* ---- wifi ---- */
 let wbusy=0,scanning=0;
 const bars=r=>{const n=r>=-55?4:r>=-65?3:r>=-75?2:r>=-85?1:0,b=E('span','bars');for(let i=0;i<4;i++)b.append(E('i',i<n?'on':''));return b};

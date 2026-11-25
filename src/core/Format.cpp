@@ -35,9 +35,9 @@ bool fmtNum(char *out, size_t n, double v, uint8_t decimals, SignMode sign) {
   return true;
 }
 
-static bool thb(char *out, size_t n, double v, SignMode sign) {
+static bool thb(char *out, size_t n, double v, SignMode sign, uint8_t decimals = 2) {
   char num[32];
-  if (!fmtNum(num, sizeof num, v, 2, SIGN_NONE)) { snprintf(out, n, "N/A"); return false; }
+  if (!fmtNum(num, sizeof num, v, decimals, SIGN_NONE)) { snprintf(out, n, "N/A"); return false; }
   char s = 0;
   const char *digits = num;
   if (num[0] == '-') { s = '-'; digits++; }
@@ -47,8 +47,8 @@ static bool thb(char *out, size_t n, double v, SignMode sign) {
   return true;
 }
 
-bool fmtThb(char *out, size_t n, double v) { return thb(out, n, v, SIGN_NONE); }
-bool fmtThbSigned(char *out, size_t n, double v) { return thb(out, n, v, SIGN_ALWAYS); }
+bool fmtThb(char *out, size_t n, double v, uint8_t decimals) { return thb(out, n, v, SIGN_NONE, decimals); }
+bool fmtThbSigned(char *out, size_t n, double v, uint8_t decimals) { return thb(out, n, v, SIGN_ALWAYS, decimals); }
 
 bool fmtPct(char *out, size_t n, double v) {
   char num[32];

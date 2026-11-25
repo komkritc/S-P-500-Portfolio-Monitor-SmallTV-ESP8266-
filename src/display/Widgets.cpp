@@ -10,9 +10,8 @@ namespace display {
 using namespace ui;
 
 static int s_lastBars = -99;
-static int s_lastDots = -1;
 static bool s_lastAp = false;
-void resetWidgetCache() { s_lastBars = -99; s_lastDots = -1; s_lastAp = false; }
+void resetWidgetCache() { s_lastBars = -99; s_lastAp = false; }
 
 const char *statusLabel(MarketStatus s) { return s == MS_OPEN ? "OPEN" : s == MS_CLOSED ? "CLOSED" : s == MS_PRE ? "PRE-MARKET" : "N/A"; }
 uint16_t statusColor(MarketStatus s) { return s == MS_OPEN ? C_POS : s == MS_PRE ? C_WARN : s == MS_CLOSED ? C_MUTED : C_MUTED; }
@@ -24,10 +23,28 @@ int wifiBars(const AppState &a) {
 }
 
 void drawHeader(Ui &u, const AppState &a, const char *title, uint8_t page, bool full) {
+  (void)page;   // no longer drawn: the header shows the clock, and the title names the page
   Arduino_GFX *g = u.gfx();
   if (full) g->drawFastHLine(0, HEADER_H, 240, C_LINE);
+
+  // Header clock = the room's wall clock: always the fixed local offset (settings.localOffsetMin,
+  // default UTC+7), deliberately independent of settings.tzMode, which controls the *market*
+  // timestamps (ticker stamp, chart axis). Format "Nov 25, 22:12"; amber "no clock" until NTP answers.
+  char dt[32];
+  const bool synced = a.clockSynced && a.nowEpoch;
+  if (synced) {
+    char md[16], hm[8];
+    formatMonthDay(md, sizeof md, a.nowEpoch, 1, a.settings.localOffsetMin);
+    formatClock(hm, sizeof hm, a.nowEpoch, 1, a.settings.localOffsetMin);
+    snprintf(dt, sizeof dt, "%s, %s", md, hm);
+  } else snprintf(dt, sizeof dt, "no clock");
+  const int dtW = Ui::width(dt, 1);
+  const int dtRight = 202;                                        // Wi-Fi icon box starts at 206
+  const int dtY = 3 + (Ui::lineH(2) - Ui::lineH(1)) / 2;          // same baseline as a small title
+
   static const uint8_t sizes[] = {2, 1};
-  u.fit(SLOT_TITLE, title, sizes, 2, 150, 8, 3, A_LEFT, C_HEAD);
+  u.fit(SLOT_TITLE, title, sizes, 2, dtRight - dtW - 14, 8, 3, A_LEFT, C_HEAD);
+  u.text(SLOT_DATETIME, dt, 1, dtRight, dtY, A_RIGHT, synced ? C_MUTED : C_WARN);
 
   const bool ap = a.net.mode == NetInfo::NET_AP_SETUP || a.net.mode == NetInfo::NET_AP_RESCUE;
   int bars = ap ? -2 : wifiBars(a);
@@ -36,12 +53,6 @@ void drawHeader(Ui &u, const AppState &a, const char *title, uint8_t page, bool 
     if (ap) u.text(SLOT_AP, "AP", 1, 232, 5, A_RIGHT, C_WARN);
     else { u.eraseSlot(SLOT_AP); wifiIcon(g, 216, 5, bars < 0 ? 0 : bars, bars >= 3 ? C_POS : C_WARN, C_LINE, bars < 0); }
     s_lastBars = bars; s_lastAp = ap;
-  }
-  const int dotKey = page | (a.settings.pages << 4);                    // redraw when the page OR the enabled set changes
-  if (full || dotKey != s_lastDots) {
-    g->fillRect(150, 6, 60, 12, C_BG);
-    pageDots(g, 180, 12, pageDotCount(a.settings.pages), pageDotIndex(a.settings.pages, page));
-    s_lastDots = dotKey;
   }
 }
 
