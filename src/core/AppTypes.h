@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <math.h>
 
-#define FW_VERSION "1.1.2"
+#define FW_VERSION "1.1.3"
 #define SP500_SYMBOL "^GSPC"
 
 static const uint8_t  MAX_POSITIONS = 12;   // open lots; trimmed from 24 to fit the sale ledger in RAM

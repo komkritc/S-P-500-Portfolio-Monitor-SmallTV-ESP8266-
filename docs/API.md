@@ -17,7 +17,7 @@ Conventions
 
 ### GET /api/status
 ```json
-{"fw":"1.1.2","uptime":3600,
+{"fw":"1.1.3","uptime":3600,
  "time":{"epoch":1795210554,"synced":true},
  "heap":{"free":21000,"maxBlock":17000,"frag":12},
  "chip":{"id":"A1B2C3","cpuMHz":160,"flashKB":4096,"sketchKB":512,"freeSketchKB":1019,"sdk":"3.1.2"},
@@ -93,7 +93,7 @@ While `scanning` the previous list (possibly empty) is returned. Poll every ~1.5
  "limits":{"portfolioRefreshS":[15,3600],"quoteRefreshS":[15,3600],"chartRefreshS":[60,3600],
            "pageRotateS":[3,120],"localOffsetMin":[-720,840]}}
 ```
-`pages`: integer bitmask of the LCD pages that rotate, `1` Portfolio, `2` Positions, `4` Market, `8` Realised P/L (default `15` = all). `1..15`; `0` or anything else is rejected with `400 pages must be 1..15`, so at least one page always stays on. The Wi-Fi setup/rescue screen is not affected. `charts`: integer bitmask of the chart ranges the LCD Market page cycles through, `1` 1D, `2` 5D, `4` 1M (default `7` = all), `1..7`, else `400 charts must be 1..7`. It only affects the LCD; the web chart and the background refresh still cover all three ranges. `defaultRange`: `1d`|`5d`|`1mo`. `tzMode`: `exchange` (America/New_York) | `local` (fixed UTC offset `localOffsetMin`, no DST).
+`pages`: integer bitmask of the LCD pages that rotate, `1` Portfolio, `2` Positions, `4` Market, `8` Realised P/L (default `15` = all). `1..15`; `0` or anything else is rejected with `400 pages must be 1..15`, so at least one page always stays on. The Wi-Fi setup/rescue screen is not affected. `charts`: integer bitmask of the chart ranges the LCD Market page cycles through, `1` 1D, `2` 5D, `4` 1M (default `7` = all), `1..7`, else `400 charts must be 1..7`. It only affects the LCD; the web chart and the background refresh still cover all three ranges. `defaultRange`: `1d`|`5d`|`1mo`. `tzMode`: `exchange` (America/New_York) | `local` (fixed UTC offset `localOffsetMin`, no DST). Bangkok is `local` + `420` (ICT has never observed DST, so a fixed offset is exact); the web UI's **Zone preset** dropdown offers Bangkok, UTC+8, Tokyo/Seoul, India and UTC and fills the offset for you. In `local` mode the zone shown by `/api/market` is `UTC+07:00` while `tzName` stays the instrument's exchange zone - NYSE session hours and the OPEN/CLOSED badge always follow America/New_York rules, never the display zone.
 
 ### GET /api/positions/job
 State of the last "add position" request: `{"state":"idle|pending|ok|error","error":"","symbol":"^GSPC","updated":false}`.

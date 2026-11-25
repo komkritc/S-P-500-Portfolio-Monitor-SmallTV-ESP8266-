@@ -233,6 +233,7 @@ If the device cannot join your Wi-Fi (or has no saved network) it starts its own
 <div class="pg"><span class="l2">Market page charts</span><label><input type="checkbox" class="chc" data-b="1"> 1D</label><label><input type="checkbox" class="chc" data-b="2"> 5D</label><label><input type="checkbox" class="chc" data-b="4"> 1M</label></div>
 <label>Default chart range<select id="s-defaultRange"><option value="1d">1D</option><option value="5d">5D</option><option value="1mo">1M</option></select></label>
 <label>Time zone<select id="s-tzMode"><option value="exchange">Exchange (America/New_York)</option><option value="local">Local (fixed UTC offset)</option></select></label>
+<label id="s-tzp">Zone preset<select id="s-tzPreset"><option value="">Custom / other</option><option value="420">Bangkok, Thailand (ICT, UTC+7)</option><option value="480">Singapore, KL, HK, Taipei, Beijing (UTC+8)</option><option value="540">Tokyo, Seoul (UTC+9)</option><option value="330">India (IST, UTC+5:30)</option><option value="0">UTC / GMT</option></select></label>
 <label id="s-off">UTC offset (minutes)<input id="s-localOffsetMin" type="number"></label>
 <label>Hostname<input id="s-hostname" maxlength="31" autocapitalize="off"></label>
 <div><label>Admin password<input id="s-adminPass" type="password" autocomplete="new-password" placeholder="leave empty to keep"></label>
@@ -613,8 +614,14 @@ function fS(s){
 NK.forEach(k=>{const i=$('s-'+k);i.value=s[k];if(s.limits&&s.limits[k]){i.min=s.limits[k][0];i.max=s.limits[k][1];i.title='Allowed: '+s.limits[k][0]+'..'+s.limits[k][1]}});
 document.querySelectorAll('.pgc').forEach(c=>c.checked=!!((s.pages==null?15:s.pages)&+c.dataset.b));document.querySelectorAll('.chc').forEach(c=>c.checked=!!((s.charts==null?7:s.charts)&+c.dataset.b));$('s-defaultRange').value=s.defaultRange;$('s-tzMode').value=s.tzMode;$('s-hostname').value=s.hostname;
 $('s-adminPass').value='';$('s-clr').checked=false;$('s-aps').textContent=s.adminPassSet?'An admin password is set.':'No admin password set (open access).';tzv()}
-const tzv=()=>{$('s-off').style.display=$('s-tzMode').value=='local'?'':'none'};
-$('s-tzMode').onchange=tzv;
+const tzv=()=>{const l=$('s-tzMode').value=='local';$('s-off').style.display=l?'':'none';
+const v=+$('s-localOffsetMin').value;const m=l?TZP.find(z=>z==v):undefined;$('s-tzPreset').value=m===undefined?'':String(m);};
+// fixed-offset zones offered as presets; none of them observe DST, so a minute
+// offset is exact. Keep this list in sync with the <option> values in #s-tzPreset.
+const TZP=[420,480,540,330,0];
+$('s-tzMode').onchange=tzv;$('s-localOffsetMin').onchange=tzv;
+$('s-tzPreset').onchange=()=>{const v=$('s-tzPreset').value;if(v==='')return;
+$('s-tzMode').value='local';$('s-localOffsetMin').value=v;tzv()};
 async function ldSet(){try{fS(applyS(await api('/api/settings')))}catch(e){$('s-err').textContent=e.message}}
 $('sf').onsubmit=async ev=>{ev.preventDefault();
 const er=$('s-err'),b={},L=(S&&S.limits)||{};er.textContent='';er.className='er';
